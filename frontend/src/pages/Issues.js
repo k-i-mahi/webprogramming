@@ -215,15 +215,30 @@ const Issues = () => {
 
   return (
     <div className="container">
-      <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-          <h1>Issues Management</h1>
-          <button 
-            onClick={() => setShowForm(true)}
-            className="btn btn-primary"
-          >
-            + Report New Issue
-          </button>
+      <div className="page-card">
+        <div className="page-actions">
+          <div className="page-actions-left">
+            <div className="page-header-icon">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <div>
+              <h1 className="page-header-content">Issues Management</h1>
+              <p className="page-header-content">Track and manage community issues</p>
+            </div>
+          </div>
+          <div className="page-actions-right">
+            <button 
+              onClick={() => setShowForm(true)}
+              className="btn btn-primary flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Report New Issue
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -246,8 +261,15 @@ const Issues = () => {
         />
 
         {showForm && (
-          <div className="card" style={{ marginBottom: '2rem' }}>
-            <h3>{editingIssue ? 'Edit Issue' : 'Report New Issue'}</h3>
+          <div className="page-card">
+            <div className="page-card-header">
+              <div className="page-card-icon">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </div>
+              <h3 className="page-card-title">{editingIssue ? 'Edit Issue' : 'Report New Issue'}</h3>
+            </div>
             <form onSubmit={handleSubmit}>
               <div className="form-group">
                 <label htmlFor="title">Title</label>
@@ -321,8 +343,11 @@ const Issues = () => {
                 </select>
               </div>
 
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <button type="submit" className="btn btn-primary">
+              <div className="flex gap-4">
+                <button type="submit" className="btn btn-primary flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
                   {editingIssue ? 'Update Issue' : 'Create Issue'}
                 </button>
                 <button 
@@ -340,8 +365,11 @@ const Issues = () => {
                       priority: 'Medium' 
                     });
                   }}
-                  className="btn btn-secondary"
+                  className="btn btn-secondary flex items-center gap-2"
                 >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                   Cancel
                 </button>
               </div>
@@ -349,83 +377,101 @@ const Issues = () => {
           </div>
         )}
 
-        <div className="card">
-          <h3>Issues ({issues.length})</h3>
+        <div className="page-card">
+          <div className="page-card-header">
+            <div className="page-card-icon">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+            </div>
+            <h3 className="page-card-title">Issues ({issues.length})</h3>
+          </div>
           {issues.length === 0 ? (
-            <p>No issues found.</p>
+            <div className="empty-state">
+              <div className="empty-state-icon">
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <h3 className="empty-state-title">No issues found</h3>
+              <p className="empty-state-description">No issues match your current filters.</p>
+            </div>
           ) : (
-            <div style={{ display: 'grid', gap: '1rem' }}>
+            <div className="grid gap-4">
               {issues.map(issue => (
-                <div key={issue._id} className="card" style={{ padding: '1rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
-                        <h4 style={{ margin: 0 }}>{issue.title}</h4>
-                        <span 
-                          style={{ 
-                            padding: '0.25rem 0.5rem', 
-                            borderRadius: '4px', 
-                            backgroundColor: getStatusColor(issue.status),
-                            color: 'white',
-                            fontSize: '0.8rem',
-                            fontWeight: 'bold'
-                          }}
-                        >
-                          {issue.status}
-                        </span>
-                        <span 
-                          style={{ 
-                            padding: '0.25rem 0.5rem', 
-                            borderRadius: '4px', 
-                            backgroundColor: getPriorityColor(issue.priority),
-                            color: 'white',
-                            fontSize: '0.8rem',
-                            fontWeight: 'bold'
-                          }}
-                        >
-                          {issue.priority}
-                        </span>
+                <div key={issue._id} className="issue-card">
+                  <div className="flex justify-between items-start gap-4">
+                    <div className="flex-1">
+                      <div className="issue-header">
+                        <h4 className="issue-title">{issue.title}</h4>
+                        <div className="issue-badges">
+                          <span className={`issue-badge status-${issue.status.toLowerCase().replace(' ', '-')}`}>
+                            {issue.status}
+                          </span>
+                          <span className={`issue-badge priority-${issue.priority.toLowerCase()}`}>
+                            {issue.priority}
+                          </span>
+                        </div>
                       </div>
                       
-                      <p style={{ color: '#666', marginBottom: '1rem' }}>{issue.description}</p>
+                      <p className="issue-description">{issue.description}</p>
                       
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', fontSize: '0.9rem' }}>
-                        <div>
-                          <strong>Category:</strong> {issue.category?.name}
+                      <div className="issue-details">
+                        <div className="issue-detail">
+                          <svg className="issue-detail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                          </svg>
+                          <span><strong>Category:</strong> {issue.category?.name}</span>
                         </div>
-                        <div>
-                          <strong>Created by:</strong> {issue.createdBy?.name} ({issue.createdBy?.role})
+                        <div className="issue-detail">
+                          <svg className="issue-detail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                          </svg>
+                          <span><strong>Created by:</strong> {issue.createdBy?.name}</span>
                         </div>
                         {issue.assignedTo && (
-                          <div>
-                            <strong>Assigned to:</strong> {issue.assignedTo?.name}
+                          <div className="issue-detail">
+                            <svg className="issue-detail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span><strong>Assigned to:</strong> {issue.assignedTo?.name}</span>
                           </div>
                         )}
-                        <div>
-                          <strong>Location:</strong> {issue.location?.latitude}, {issue.location?.longitude}
+                        <div className="issue-detail">
+                          <svg className="issue-detail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                          <span><strong>Location:</strong> {issue.location?.latitude}, {issue.location?.longitude}</span>
                         </div>
-                        <div>
-                          <strong>Created:</strong> {new Date(issue.createdAt).toLocaleDateString()}
+                        <div className="issue-detail">
+                          <svg className="issue-detail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <span><strong>Created:</strong> {new Date(issue.createdAt).toLocaleDateString()}</span>
                         </div>
                       </div>
 
                       {issue.photoURL && (
-                        <div style={{ marginTop: '1rem' }}>
+                        <div className="issue-photo">
                           <img 
                             src={issue.photoURL} 
                             alt="Issue photo" 
-                            style={{ maxWidth: '200px', maxHeight: '150px', objectFit: 'cover', borderRadius: '4px' }}
+                            className="max-w-xs max-h-32 object-cover rounded-lg"
                           />
                         </div>
                       )}
                     </div>
 
-                    <div style={{ display: 'flex', gap: '0.5rem', flexDirection: 'column' }}>
+                    <div className="issue-actions">
                       <button 
                         onClick={() => handleViewDetails(issue)}
-                        className="btn btn-primary"
-                        style={{ fontSize: '0.8rem' }}
+                        className="btn btn-primary btn-sm flex items-center gap-2"
                       >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
                         View Details
                       </button>
                       
@@ -433,7 +479,7 @@ const Issues = () => {
                         <select
                           value={issue.status}
                           onChange={(e) => handleStatusUpdate(issue._id, e.target.value)}
-                          style={{ fontSize: '0.8rem', padding: '0.25rem' }}
+                          className="form-control text-sm"
                         >
                           <option value="Reported">Reported</option>
                           <option value="In Progress">In Progress</option>
@@ -445,17 +491,21 @@ const Issues = () => {
                         <>
                           <button 
                             onClick={() => handleEdit(issue)}
-                            className="btn btn-secondary"
-                            style={{ fontSize: '0.8rem' }}
+                            className="btn btn-secondary btn-sm flex items-center gap-2"
                           >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
                             Edit
                           </button>
                           {user?.role === 'admin' && (
                             <button 
                               onClick={() => handleDelete(issue._id)}
-                              className="btn btn-danger"
-                              style={{ fontSize: '0.8rem' }}
+                              className="btn btn-danger btn-sm flex items-center gap-2"
                             >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
                               Delete
                             </button>
                           )}

@@ -49,30 +49,36 @@ const IssueFilters = ({
   );
 
   return (
-    <div className="card" style={{ marginBottom: '2rem' }}>
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center',
-        marginBottom: '1rem'
-      }}>
-        <h3 style={{ margin: 0 }}>Filters</h3>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+    <div className="page-card">
+      <div className="page-card-header">
+        <div className="page-card-icon">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.207A1 1 0 013 6.5V4z" />
+          </svg>
+        </div>
+        <h3 className="page-card-title">Filters</h3>
+      </div>
+      <div className="page-actions">
+        <div className="page-actions-right">
           <button
             type="button"
             onClick={() => setShowAdvanced(!showAdvanced)}
-            className="btn btn-secondary"
-            style={{ fontSize: '0.8rem' }}
+            className="btn btn-secondary btn-sm flex items-center gap-2"
           >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
             {showAdvanced ? 'Hide' : 'Show'} Advanced
           </button>
           {hasActiveFilters && (
             <button
               type="button"
               onClick={clearFilters}
-              className="btn btn-danger"
-              style={{ fontSize: '0.8rem' }}
+              className="btn btn-danger btn-sm flex items-center gap-2"
             >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
               Clear All
             </button>
           )}
@@ -80,9 +86,14 @@ const IssueFilters = ({
       </div>
 
       {/* Basic Filters */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+      <div className="form-grid">
         <div className="form-group">
-          <label htmlFor="search">Search</label>
+          <label htmlFor="search" className="flex items-center gap-2">
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            Search
+          </label>
           <input
             type="text"
             id="search"
@@ -94,7 +105,12 @@ const IssueFilters = ({
         </div>
 
         <div className="form-group">
-          <label htmlFor="status">Status</label>
+          <label htmlFor="status" className="flex items-center gap-2">
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Status
+          </label>
           <select
             id="status"
             className="form-control"
@@ -109,7 +125,12 @@ const IssueFilters = ({
         </div>
 
         <div className="form-group">
-          <label htmlFor="category">Category</label>
+          <label htmlFor="category" className="flex items-center gap-2">
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+            </svg>
+            Category
+          </label>
           <select
             id="category"
             className="form-control"
@@ -126,7 +147,12 @@ const IssueFilters = ({
         </div>
 
         <div className="form-group">
-          <label htmlFor="priority">Priority</label>
+          <label htmlFor="priority" className="flex items-center gap-2">
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            Priority
+          </label>
           <select
             id="priority"
             className="form-control"
@@ -144,14 +170,22 @@ const IssueFilters = ({
 
       {/* Advanced Filters */}
       {showAdvanced && (
-        <div style={{ 
-          marginTop: '1rem', 
-          paddingTop: '1rem', 
-          borderTop: '1px solid #dee2e6' 
-        }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+        <div className="form-section">
+          <div className="form-section-header">
+            <svg className="form-section-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
+            </svg>
+            <h3 className="form-section-title">Advanced Filters</h3>
+          </div>
+          
+          <div className="form-grid">
             <div className="form-group">
-              <label htmlFor="assignedTo">Assigned To</label>
+              <label htmlFor="assignedTo" className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                Assigned To
+              </label>
               <select
                 id="assignedTo"
                 className="form-control"
@@ -165,7 +199,12 @@ const IssueFilters = ({
             </div>
 
             <div className="form-group">
-              <label htmlFor="dateRange">Date Range</label>
+              <label htmlFor="dateRange" className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Date Range
+              </label>
               <select
                 id="dateRange"
                 className="form-control"
@@ -181,7 +220,12 @@ const IssueFilters = ({
             </div>
 
             <div className="form-group">
-              <label htmlFor="sortBy">Sort By</label>
+              <label htmlFor="sortBy" className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                </svg>
+                Sort By
+              </label>
               <select
                 id="sortBy"
                 className="form-control"
@@ -197,7 +241,12 @@ const IssueFilters = ({
             </div>
 
             <div className="form-group">
-              <label htmlFor="sortOrder">Sort Order</label>
+              <label htmlFor="sortOrder" className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+                </svg>
+                Sort Order
+              </label>
               <select
                 id="sortOrder"
                 className="form-control"
@@ -214,52 +263,42 @@ const IssueFilters = ({
 
       {/* Active Filters Display */}
       {hasActiveFilters && (
-        <div style={{ 
-          marginTop: '1rem', 
-          padding: '0.5rem',
-          backgroundColor: '#f8f9fa',
-          borderRadius: '4px',
-          fontSize: '0.9rem'
-        }}>
-          <strong>Active Filters:</strong>
-          {Object.entries(filters).map(([key, value]) => {
-            if (!value || value === '' || (key === 'sortBy' && value === 'createdAt') || (key === 'sortOrder' && value === 'desc')) {
-              return null;
-            }
-            
-            let displayValue = value;
-            if (key === 'category') {
-              const category = categories.find(c => c._id === value);
-              displayValue = category ? category.name : value;
-            }
-            
-            return (
-              <span key={key} style={{ 
-                display: 'inline-block',
-                margin: '0.25rem',
-                padding: '0.25rem 0.5rem',
-                backgroundColor: '#007bff',
-                color: 'white',
-                borderRadius: '4px',
-                fontSize: '0.8rem'
-              }}>
-                {key}: {displayValue}
-                <button
-                  type="button"
-                  onClick={() => handleFilterChange(key, '')}
-                  style={{
-                    marginLeft: '0.5rem',
-                    background: 'none',
-                    border: 'none',
-                    color: 'white',
-                    cursor: 'pointer'
-                  }}
-                >
-                  ×
-                </button>
-              </span>
-            );
-          })}
+        <div className="active-filters">
+          <div className="active-filters-header">
+            <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+            </svg>
+            <span className="active-filters-title">Active Filters:</span>
+          </div>
+          <div className="active-filters-list">
+            {Object.entries(filters).map(([key, value]) => {
+              if (!value || value === '' || (key === 'sortBy' && value === 'createdAt') || (key === 'sortOrder' && value === 'desc')) {
+                return null;
+              }
+              
+              let displayValue = value;
+              if (key === 'category') {
+                const category = categories.find(c => c._id === value);
+                displayValue = category ? category.name : value;
+              }
+              
+              return (
+                <span key={key} className="active-filter-tag">
+                  <span className="font-medium">{key}:</span>
+                  <span>{displayValue}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleFilterChange(key, '')}
+                    className="active-filter-remove"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </span>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

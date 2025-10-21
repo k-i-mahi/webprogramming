@@ -13,14 +13,15 @@ import MyIssues from './pages/MyIssues';
 import Map from './pages/Map';
 import PrivateRoute from './components/PrivateRoute';
 import RoleBasedRoute from './components/RoleBasedRoute';
+import './pages.css';
 
 function App() {
   return (
     <AuthProvider>
       <Router>
-        <div className="App">
+        <div className="App min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
           <Navbar />
-          <main>
+          <main className="relative page-content">
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />

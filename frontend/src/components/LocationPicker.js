@@ -117,9 +117,9 @@ const LocationPicker = ({
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+      <div className="form-grid-2">
         <div>
-          <label htmlFor="latitude" style={{ fontSize: '0.9rem', color: '#666' }}>
+          <label htmlFor="latitude" className="text-sm text-gray-600">
             Latitude
           </label>
           <input
@@ -131,12 +131,11 @@ const LocationPicker = ({
             onChange={handleManualInput}
             step="any"
             placeholder="e.g., 40.7128"
-            style={{ fontSize: '0.9rem' }}
           />
         </div>
         
         <div>
-          <label htmlFor="longitude" style={{ fontSize: '0.9rem', color: '#666' }}>
+          <label htmlFor="longitude" className="text-sm text-gray-600">
             Longitude
           </label>
           <input
@@ -148,36 +147,25 @@ const LocationPicker = ({
             onChange={handleManualInput}
             step="any"
             placeholder="e.g., -74.0060"
-            style={{ fontSize: '0.9rem' }}
           />
         </div>
       </div>
 
       {locationError && (
-        <div style={{ 
-          color: '#dc3545', 
-          fontSize: '0.8rem', 
-          marginTop: '0.5rem',
-          padding: '0.5rem',
-          backgroundColor: '#f8d7da',
-          border: '1px solid #f5c6cb',
-          borderRadius: '4px'
-        }}>
+        <div className="alert alert-danger mt-3">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
           {locationError}
         </div>
       )}
 
       {currentLocation.lat && currentLocation.lng && (
-        <div style={{ 
-          color: '#28a745', 
-          fontSize: '0.8rem', 
-          marginTop: '0.5rem',
-          padding: '0.5rem',
-          backgroundColor: '#d4edda',
-          border: '1px solid #c3e6cb',
-          borderRadius: '4px'
-        }}>
-          ✅ Location set: {currentLocation.lat.toFixed(6)}, {currentLocation.lng.toFixed(6)}
+        <div className="alert alert-success mt-3">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          Location set: {Number(currentLocation.lat).toFixed(6)}, {Number(currentLocation.lng).toFixed(6)}
         </div>
       )}
     </div>
