@@ -4,6 +4,9 @@
   --primary-color: #6366f1;
   --primary-dark: #4f46e5;
   --primary-light: #818cf8;
+  --primary-100: #e0e7ff;
+  --primary-200: #c7d2fe;
+  --primary-800: #3730a3;
   --secondary-color: #64748b;
   --secondary-dark: #475569;
   --secondary-light: #94a3b8;
@@ -15,6 +18,21 @@
   --danger-dark: #dc2626;
   --info-color: #06b6d4;
   --info-dark: #0891b2;
+  
+  /* Text Colors */
+  --text-primary: #1f2937;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
+  
+  /* Border Colors */
+  --border-color: #e5e7eb;
+  
+  /* Border Radius */
+  --border-radius: 0.5rem;
+  --border-radius-lg: 0.75rem;
+  
+  /* Transitions */
+  --transition: all 0.2s ease-in-out;
   
   /* Neutral Colors */
   --gray-50: #f8fafc;
@@ -850,7 +868,7 @@ html {
 .page-icon-lg { width: 2rem; height: 2rem; }
 .page-icon-xl { width: 2.5rem; height: 2.5rem; }
 
-/* Navbar visibility fixes */
+/* Navbar Styles */
 nav {
   position: sticky !important;
   top: 0 !important;
@@ -860,6 +878,138 @@ nav {
   box-shadow: var(--shadow-sm) !important;
   width: 100% !important;
   display: block !important;
+}
+
+/* Navbar Button Styles - All Same Size */
+.nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.2s ease-in-out;
+  min-height: 2.5rem;
+  white-space: nowrap;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--gray-600);
+}
+
+.nav-btn:hover {
+  background: var(--gray-100);
+  color: var(--primary-color);
+  border-color: var(--gray-200);
+}
+
+.nav-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+.nav-btn svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+.nav-btn span {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* User Info Special Styling */
+.nav-btn.user-info {
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  padding: 0.5rem 0.75rem;
+}
+
+.nav-btn.user-info:hover {
+  background: var(--gray-100);
+  border-color: var(--gray-300);
+}
+
+/* Logout Button Special Styling */
+.nav-btn.logout-btn {
+  color: var(--danger-color);
+}
+
+.nav-btn.logout-btn:hover {
+  background: var(--danger-color);
+  color: white;
+  border-color: var(--danger-color);
+}
+
+/* Active State */
+.nav-btn.active {
+  background: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+.nav-btn.active:hover {
+  background: var(--primary-dark);
+  border-color: var(--primary-dark);
+}
+
+/* Mobile Navigation Button Styles */
+.nav-btn-mobile {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.2s ease-in-out;
+  min-height: 3rem;
+  color: var(--gray-700);
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.nav-btn-mobile:hover {
+  background: var(--gray-100);
+  color: var(--primary-color);
+  border-color: var(--gray-200);
+}
+
+.nav-btn-mobile svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+.nav-btn-mobile span {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* Mobile User Info Special Styling */
+.nav-btn-mobile.user-info-mobile {
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  padding: 1rem;
+}
+
+.nav-btn-mobile.user-info-mobile:hover {
+  background: var(--gray-100);
+  border-color: var(--gray-300);
+}
+
+/* Mobile Logout Button Special Styling */
+.nav-btn-mobile.logout-btn-mobile {
+  color: var(--danger-color);
+}
+
+.nav-btn-mobile.logout-btn-mobile:hover {
+  background: var(--danger-color);
+  color: white;
+  border-color: var(--danger-color);
 }
 
 /* Ensure navbar is always visible */

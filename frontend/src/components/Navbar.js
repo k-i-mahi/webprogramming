@@ -38,49 +38,49 @@ const Navbar = () => {
           </Link>
 
           {/* Desktop Navigation */}
-          <div className="hidden lg:flex items-center space-x-6">
+          <div className="hidden lg:flex items-center space-x-2">
             {isAuthenticated ? (
               <>
-                <Link to="/dashboard" className="btn btn-primary btn-sm">
+                <Link to="/dashboard" className="nav-btn">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5a2 2 0 012-2h4a2 2 0 012 2v6H8V5z" />
                   </svg>
-                  Dashboard
+                  <span>Dashboard</span>
                 </Link>
-                <Link to="/issues" className="btn btn-secondary btn-sm">
+                <Link to="/issues" className="nav-btn">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  Issues
+                  <span>Issues</span>
                 </Link>
-                <Link to="/my-issues" className="btn btn-secondary btn-sm">
+                <Link to="/my-issues" className="nav-btn">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                   </svg>
-                  My Issues
+                  <span>My Issues</span>
                 </Link>
-                <Link to="/map" className="btn btn-secondary btn-sm">
+                <Link to="/map" className="nav-btn">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
-                  Map View
+                  <span>Map View</span>
                 </Link>
                 {user?.role === 'admin' && (
-                  <Link to="/categories" className="btn btn-secondary btn-sm">
+                  <Link to="/categories" className="nav-btn">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                     </svg>
-                    Categories
+                    <span>Categories</span>
                   </Link>
                 )}
                 
                 {/* User Menu */}
-                <div className="flex items-center space-x-4">
-                  <div className="flex items-center space-x-2 px-3 py-2 bg-gray-100 rounded-lg">
-                    <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary-dark rounded-full flex items-center justify-center">
-                      <span className="text-white font-semibold text-sm">
+                <div className="flex items-center space-x-2">
+                  <div className="nav-btn user-info">
+                    <div className="w-6 h-6 bg-gradient-to-br from-primary to-primary-dark rounded-full flex items-center justify-center">
+                      <span className="text-white font-semibold text-xs">
                         {user?.name?.charAt(0).toUpperCase()}
                       </span>
                     </div>
@@ -90,34 +90,34 @@ const Navbar = () => {
                     </div>
                   </div>
                   
-                  <Link to="/profile" className="btn btn-outline btn-sm">
+                  <Link to="/profile" className="nav-btn">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
-                    Profile
+                    <span>Profile</span>
                   </Link>
                   
-                  <button onClick={handleLogout} className="btn btn-danger btn-sm">
+                  <button onClick={handleLogout} className="nav-btn logout-btn">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                     </svg>
-                    Logout
+                    <span>Logout</span>
                   </button>
                 </div>
               </>
             ) : (
               <>
-                <Link to="/login" className="btn btn-primary btn-sm">
+                <Link to="/login" className="nav-btn">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
                   </svg>
-                  Login
+                  <span>Login</span>
                 </Link>
-                <Link to="/register" className="btn btn-secondary btn-sm">
+                <Link to="/register" className="nav-btn">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
                   </svg>
-                  Register
+                  <span>Register</span>
                 </Link>
               </>
             )}
@@ -142,12 +142,12 @@ const Navbar = () => {
         {/* Mobile Navigation */}
         {isMobileMenuOpen && (
           <div className="lg:hidden border-t border-gray-200 py-4 animate-fadeIn">
-            <div className="flex flex-col space-y-3">
+            <div className="flex flex-col space-y-2">
               {isAuthenticated ? (
                 <>
                   <Link 
                     to="/dashboard" 
-                    className="flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-primary transition-colors"
+                    className="nav-btn-mobile"
                     onClick={closeMobileMenu}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -159,7 +159,7 @@ const Navbar = () => {
                   
                   <Link 
                     to="/issues" 
-                    className="flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-primary transition-colors"
+                    className="nav-btn-mobile"
                     onClick={closeMobileMenu}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -170,7 +170,7 @@ const Navbar = () => {
                   
                   <Link 
                     to="/my-issues" 
-                    className="flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-primary transition-colors"
+                    className="nav-btn-mobile"
                     onClick={closeMobileMenu}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -181,7 +181,7 @@ const Navbar = () => {
                   
                   <Link 
                     to="/map" 
-                    className="flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-primary transition-colors"
+                    className="nav-btn-mobile"
                     onClick={closeMobileMenu}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -194,7 +194,7 @@ const Navbar = () => {
                   {user?.role === 'admin' && (
                     <Link 
                       to="/categories" 
-                      className="flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-primary transition-colors"
+                      className="nav-btn-mobile"
                       onClick={closeMobileMenu}
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -206,7 +206,7 @@ const Navbar = () => {
                   
                   <Link 
                     to="/profile" 
-                    className="flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-primary transition-colors"
+                    className="nav-btn-mobile"
                     onClick={closeMobileMenu}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -216,23 +216,21 @@ const Navbar = () => {
                   </Link>
                   
                   {/* User Info */}
-                  <div className="px-4 py-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-primary to-primary-dark rounded-full flex items-center justify-center">
-                        <span className="text-white font-semibold">
-                          {user?.name?.charAt(0).toUpperCase()}
-                        </span>
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900">{user?.name}</p>
-                        <p className="text-sm text-gray-500 capitalize">{user?.role}</p>
-                      </div>
+                  <div className="nav-btn-mobile user-info-mobile">
+                    <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary-dark rounded-full flex items-center justify-center">
+                      <span className="text-white font-semibold text-sm">
+                        {user?.name?.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900">{user?.name}</p>
+                      <p className="text-sm text-gray-500 capitalize">{user?.role}</p>
                     </div>
                   </div>
                   
                   <button 
                     onClick={handleLogout} 
-                    className="flex items-center space-x-3 px-4 py-3 rounded-lg text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors"
+                    className="nav-btn-mobile logout-btn-mobile"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -244,7 +242,7 @@ const Navbar = () => {
                 <>
                   <Link 
                     to="/login" 
-                    className="flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-primary transition-colors"
+                    className="nav-btn-mobile"
                     onClick={closeMobileMenu}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -255,7 +253,7 @@ const Navbar = () => {
                   
                   <Link 
                     to="/register" 
-                    className="flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-primary transition-colors"
+                    className="nav-btn-mobile"
                     onClick={closeMobileMenu}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

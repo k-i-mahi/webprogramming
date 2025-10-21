@@ -15,8 +15,8 @@ const router = express.Router();
 
 // @route   GET /api/categories
 // @desc    Get all categories
-// @access  Private/Admin
-router.get('/', protect, isAdmin, getCategories);
+// @access  Private
+router.get('/', protect, getCategories);
 
 // @route   GET /api/categories/:id
 // @desc    Get category by ID

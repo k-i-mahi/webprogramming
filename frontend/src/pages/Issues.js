@@ -6,6 +6,7 @@ import LocationPicker from '../components/LocationPicker';
 import PhotoUpload from '../components/PhotoUpload';
 import IssueFilters from '../components/IssueFilters';
 import IssueDetailModal from '../components/IssueDetailModal';
+import { Plus, Search, Filter, MapPin, Calendar, User, AlertCircle, CheckCircle, Clock, Trash2, Edit, Eye } from 'lucide-react';
 
 const Issues = () => {
   const { user } = useAuth();
@@ -42,6 +43,9 @@ const Issues = () => {
 
   const loadIssues = async (customFilters = filters) => {
     try {
+      setLoading(true);
+      setError('');
+      
       const params = {};
       if (customFilters.status) params.status = customFilters.status;
       if (customFilters.category) params.category = customFilters.category;
@@ -52,10 +56,20 @@ const Issues = () => {
       if (customFilters.sortBy) params.sortBy = customFilters.sortBy;
       if (customFilters.sortOrder) params.sortOrder = customFilters.sortOrder;
 
+      console.log('Loading issues with params:', params);
       const response = await issueService.getIssues(params);
-      setIssues(response.data.issues);
+      console.log('Issues response:', response.data);
+      
+      if (response.data && response.data.issues) {
+        setIssues(response.data.issues);
+      } else {
+        setIssues([]);
+        setError('No issues data received from server');
+      }
     } catch (error) {
-      setError('Failed to load issues');
+      console.error('Error loading issues:', error);
+      setError(error.response?.data?.message || 'Failed to load issues. Please check your connection.');
+      setIssues([]);
     } finally {
       setLoading(false);
     }
@@ -63,10 +77,19 @@ const Issues = () => {
 
   const loadCategories = async () => {
     try {
+      console.log('Loading categories...');
       const response = await categoryService.getCategories();
-      setCategories(response.data.categories);
+      console.log('Categories response:', response.data);
+      
+      if (response.data && response.data.categories) {
+        setCategories(response.data.categories);
+      } else {
+        console.warn('No categories data received');
+        setCategories([]);
+      }
     } catch (error) {
       console.error('Failed to load categories:', error);
+      setError('Failed to load categories. Please refresh the page.');
     }
   };
 
@@ -214,107 +237,123 @@ const Issues = () => {
   }
 
   return (
-    <div className="container">
-      <div className="page-card">
-        <div className="page-actions">
-          <div className="page-actions-left">
-            <div className="page-header-icon">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
+    <div className="container mx-auto px-4 py-8">
+      {/* Header Section */}
+      <div className="mb-8">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl shadow-lg">
+              <AlertCircle className="w-8 h-8 text-white" />
             </div>
             <div>
-              <h1 className="page-header-content">Issues Management</h1>
-              <p className="page-header-content">Track and manage community issues</p>
+              <h1 className="text-3xl font-bold text-gray-900">Issues Management</h1>
+              <p className="text-gray-600 mt-1">Track and manage community issues efficiently</p>
             </div>
           </div>
-          <div className="page-actions-right">
+          <div className="flex flex-col sm:flex-row gap-3">
             <button 
               onClick={() => setShowForm(true)}
-              className="btn btn-primary flex items-center gap-2"
+              className="btn btn-primary flex items-center gap-2 px-6 py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
+              <Plus className="w-5 h-5" />
               Report New Issue
             </button>
           </div>
         </div>
+      </div>
 
-        {error && (
-          <div className="alert alert-danger">
-            {error}
-          </div>
-        )}
+      {/* Status Messages */}
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-red-500" />
+          <span className="text-red-700">{error}</span>
+        </div>
+      )}
 
-        {success && (
-          <div className="alert alert-success">
-            {success}
-          </div>
-        )}
+      {success && (
+        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3">
+          <CheckCircle className="w-5 h-5 text-green-500" />
+          <span className="text-green-700">{success}</span>
+        </div>
+      )}
 
-        {/* Filters */}
+      {/* Filters Section */}
+      <div className="mb-8">
         <IssueFilters
           categories={categories}
           onFiltersChange={handleFilterChange}
           initialFilters={filters}
         />
+      </div>
 
-        {showForm && (
-          <div className="page-card">
-            <div className="page-card-header">
-              <div className="page-card-icon">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
+      {/* Issue Form Modal */}
+      {showForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Edit className="w-5 h-5 text-blue-600" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900">
+                  {editingIssue ? 'Edit Issue' : 'Report New Issue'}
+                </h3>
               </div>
-              <h3 className="page-card-title">{editingIssue ? 'Edit Issue' : 'Report New Issue'}</h3>
             </div>
-            <form onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label htmlFor="title">Title</label>
-                <input
-                  type="text"
-                  id="title"
-                  name="title"
-                  className="form-control"
-                  value={formData.title}
-                  onChange={handleInputChange}
-                  required
-                />
-              </div>
+            <div className="p-6">
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div>
+                  <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-2">
+                    Issue Title
+                  </label>
+                  <input
+                    type="text"
+                    id="title"
+                    name="title"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                    value={formData.title}
+                    onChange={handleInputChange}
+                    placeholder="Enter a descriptive title for the issue"
+                    required
+                  />
+                </div>
 
-              <div className="form-group">
-                <label htmlFor="description">Description</label>
-                <textarea
-                  id="description"
-                  name="description"
-                  className="form-control"
-                  value={formData.description}
-                  onChange={handleInputChange}
-                  rows="4"
-                  required
-                />
-              </div>
+                <div>
+                  <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
+                    Description
+                  </label>
+                  <textarea
+                    id="description"
+                    name="description"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors resize-none"
+                    value={formData.description}
+                    onChange={handleInputChange}
+                    rows="4"
+                    placeholder="Provide detailed information about the issue"
+                    required
+                  />
+                </div>
 
-              <div className="form-group">
-                <label htmlFor="category">Category</label>
-                <select
-                  id="category"
-                  name="category"
-                  className="form-control"
-                  value={formData.category}
-                  onChange={handleInputChange}
-                  required
-                >
-                  <option value="">Select Category</option>
-                  {categories.map(category => (
-                    <option key={category._id} value={category._id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                <div>
+                  <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-2">
+                    Category
+                  </label>
+                  <select
+                    id="category"
+                    name="category"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                    value={formData.category}
+                    onChange={handleInputChange}
+                    required
+                  >
+                    <option value="">Select a category</option>
+                    {categories.map(category => (
+                      <option key={category._id} value={category._id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
               <LocationPicker
                 latitude={formData.latitude}
@@ -327,197 +366,214 @@ const Issues = () => {
                 existingPhoto={formData.photoURL}
               />
 
-              <div className="form-group">
-                <label htmlFor="priority">Priority</label>
-                <select
-                  id="priority"
-                  name="priority"
-                  className="form-control"
-                  value={formData.priority}
-                  onChange={handleInputChange}
-                >
-                  <option value="Low">Low</option>
-                  <option value="Medium">Medium</option>
-                  <option value="High">High</option>
-                  <option value="Critical">Critical</option>
-                </select>
-              </div>
+                <div>
+                  <label htmlFor="priority" className="block text-sm font-medium text-gray-700 mb-2">
+                    Priority Level
+                  </label>
+                  <select
+                    id="priority"
+                    name="priority"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                    value={formData.priority}
+                    onChange={handleInputChange}
+                  >
+                    <option value="Low">🟢 Low Priority</option>
+                    <option value="Medium">🟡 Medium Priority</option>
+                    <option value="High">🟠 High Priority</option>
+                    <option value="Critical">🔴 Critical Priority</option>
+                  </select>
+                </div>
 
-              <div className="flex gap-4">
-                <button type="submit" className="btn btn-primary flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  {editingIssue ? 'Update Issue' : 'Create Issue'}
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => {
-                    setShowForm(false);
-                    setEditingIssue(null);
-                    setFormData({ 
-                      title: '', 
-                      description: '', 
-                      category: '', 
-                      latitude: '', 
-                      longitude: '', 
-                      photoURL: '', 
-                      priority: 'Medium' 
-                    });
-                  }}
-                  className="btn btn-secondary flex items-center gap-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  Cancel
-                </button>
-              </div>
-            </form>
+                <div className="flex flex-col sm:flex-row gap-3 pt-4">
+                  <button 
+                    type="submit" 
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle className="w-5 h-5" />
+                    {editingIssue ? 'Update Issue' : 'Create Issue'}
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setShowForm(false);
+                      setEditingIssue(null);
+                      setFormData({ 
+                        title: '', 
+                        description: '', 
+                        category: '', 
+                        latitude: '', 
+                        longitude: '', 
+                        photoURL: '', 
+                        priority: 'Medium' 
+                      });
+                    }}
+                    className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Clock className="w-5 h-5" />
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        )}
+        </div>
+      )}
 
-        <div className="page-card">
-          <div className="page-card-header">
-            <div className="page-card-icon">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
+      {/* Issues List */}
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <AlertCircle className="w-5 h-5 text-blue-600" />
             </div>
-            <h3 className="page-card-title">Issues ({issues.length})</h3>
+            <h3 className="text-lg font-semibold text-gray-900">
+              Community Issues ({issues.length})
+            </h3>
           </div>
-          {issues.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-state-icon">
-                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <h3 className="empty-state-title">No issues found</h3>
-              <p className="empty-state-description">No issues match your current filters.</p>
+        </div>
+        {issues.length === 0 ? (
+          <div className="p-12 text-center">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-8 h-8 text-gray-400" />
             </div>
-          ) : (
-            <div className="grid gap-4">
-              {issues.map(issue => (
-                <div key={issue._id} className="issue-card">
-                  <div className="flex justify-between items-start gap-4">
-                    <div className="flex-1">
-                      <div className="issue-header">
-                        <h4 className="issue-title">{issue.title}</h4>
-                        <div className="issue-badges">
-                          <span className={`issue-badge status-${issue.status.toLowerCase().replace(' ', '-')}`}>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No issues found</h3>
+            <p className="text-gray-500 mb-6">No issues match your current filters or there are no issues yet.</p>
+            <button 
+              onClick={() => setShowForm(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors inline-flex items-center gap-2"
+            >
+              <Plus className="w-5 h-5" />
+              Report First Issue
+            </button>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-200">
+            {issues.map(issue => (
+              <div key={issue._id} className="p-6 hover:bg-gray-50 transition-colors">
+                <div className="flex justify-between items-start gap-6">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start gap-4 mb-4">
+                      <div className="flex-1">
+                        <h4 className="text-lg font-semibold text-gray-900 mb-2 line-clamp-2">
+                          {issue.title}
+                        </h4>
+                        <div className="flex flex-wrap gap-2 mb-3">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            issue.status === 'Reported' ? 'bg-yellow-100 text-yellow-800' :
+                            issue.status === 'In Progress' ? 'bg-blue-100 text-blue-800' :
+                            'bg-green-100 text-green-800'
+                          }`}>
+                            {issue.status === 'Reported' ? <Clock className="w-3 h-3 mr-1" /> :
+                             issue.status === 'In Progress' ? <Clock className="w-3 h-3 mr-1" /> :
+                             <CheckCircle className="w-3 h-3 mr-1" />}
                             {issue.status}
                           </span>
-                          <span className={`issue-badge priority-${issue.priority.toLowerCase()}`}>
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            issue.priority === 'Low' ? 'bg-green-100 text-green-800' :
+                            issue.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
+                            issue.priority === 'High' ? 'bg-orange-100 text-orange-800' :
+                            'bg-red-100 text-red-800'
+                          }`}>
                             {issue.priority}
                           </span>
                         </div>
                       </div>
-                      
-                      <p className="issue-description">{issue.description}</p>
-                      
-                      <div className="issue-details">
-                        <div className="issue-detail">
-                          <svg className="issue-detail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                          </svg>
-                          <span><strong>Category:</strong> {issue.category?.name}</span>
+                    </div>
+                    <p className="text-gray-600 mb-4 line-clamp-3">{issue.description}</p>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <div className="p-1 bg-blue-100 rounded">
+                          <AlertCircle className="w-4 h-4 text-blue-600" />
                         </div>
-                        <div className="issue-detail">
-                          <svg className="issue-detail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                          </svg>
-                          <span><strong>Created by:</strong> {issue.createdBy?.name}</span>
-                        </div>
-                        {issue.assignedTo && (
-                          <div className="issue-detail">
-                            <svg className="issue-detail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span><strong>Assigned to:</strong> {issue.assignedTo?.name}</span>
-                          </div>
-                        )}
-                        <div className="issue-detail">
-                          <svg className="issue-detail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                          </svg>
-                          <span><strong>Location:</strong> {issue.location?.latitude}, {issue.location?.longitude}</span>
-                        </div>
-                        <div className="issue-detail">
-                          <svg className="issue-detail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                          <span><strong>Created:</strong> {new Date(issue.createdAt).toLocaleDateString()}</span>
-                        </div>
+                        <span><strong>Category:</strong> {issue.category?.name}</span>
                       </div>
-
-                      {issue.photoURL && (
-                        <div className="issue-photo">
-                          <img 
-                            src={issue.photoURL} 
-                            alt="Issue photo" 
-                            className="max-w-xs max-h-32 object-cover rounded-lg"
-                          />
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <div className="p-1 bg-green-100 rounded">
+                          <User className="w-4 h-4 text-green-600" />
+                        </div>
+                        <span><strong>Created by:</strong> {issue.createdBy?.name}</span>
+                      </div>
+                      {issue.assignedTo && (
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <div className="p-1 bg-purple-100 rounded">
+                            <User className="w-4 h-4 text-purple-600" />
+                          </div>
+                          <span><strong>Assigned to:</strong> {issue.assignedTo?.name}</span>
                         </div>
                       )}
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <div className="p-1 bg-orange-100 rounded">
+                          <MapPin className="w-4 h-4 text-orange-600" />
+                        </div>
+                        <span><strong>Location:</strong> {issue.location?.latitude?.toFixed(4)}, {issue.location?.longitude?.toFixed(4)}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <div className="p-1 bg-gray-100 rounded">
+                          <Calendar className="w-4 h-4 text-gray-600" />
+                        </div>
+                        <span><strong>Created:</strong> {new Date(issue.createdAt).toLocaleDateString()}</span>
+                      </div>
                     </div>
 
-                    <div className="issue-actions">
-                      <button 
-                        onClick={() => handleViewDetails(issue)}
-                        className="btn btn-primary btn-sm flex items-center gap-2"
+                    {issue.photoURL && (
+                      <div className="mb-4">
+                        <img 
+                          src={issue.photoURL} 
+                          alt="Issue photo" 
+                          className="w-full max-w-sm h-32 object-cover rounded-lg border border-gray-200"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-2 min-w-[200px]">
+                    <button 
+                      onClick={() => handleViewDetails(issue)}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Eye className="w-4 h-4" />
+                      View Details
+                    </button>
+                    
+                    {(user?.role === 'authority' || user?.role === 'admin') && (
+                      <select
+                        value={issue.status}
+                        onChange={(e) => handleStatusUpdate(issue._id, e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </svg>
-                        View Details
-                      </button>
-                      
-                      {(user?.role === 'authority' || user?.role === 'admin') && (
-                        <select
-                          value={issue.status}
-                          onChange={(e) => handleStatusUpdate(issue._id, e.target.value)}
-                          className="form-control text-sm"
+                        <option value="Reported">Reported</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="Resolved">Resolved</option>
+                      </select>
+                    )}
+                    
+                    {(user?.role === 'admin' || (user?.role === 'resident' && issue.createdBy?._id === user?.id)) && (
+                      <>
+                        <button 
+                          onClick={() => handleEdit(issue)}
+                          className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
                         >
-                          <option value="Reported">Reported</option>
-                          <option value="In Progress">In Progress</option>
-                          <option value="Resolved">Resolved</option>
-                        </select>
-                      )}
-                      
-                      {(user?.role === 'admin' || (user?.role === 'resident' && issue.createdBy?._id === user?.id)) && (
-                        <>
+                          <Edit className="w-4 h-4" />
+                          Edit
+                        </button>
+                        {user?.role === 'admin' && (
                           <button 
-                            onClick={() => handleEdit(issue)}
-                            className="btn btn-secondary btn-sm flex items-center gap-2"
+                            onClick={() => handleDelete(issue._id)}
+                            className="w-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
                           >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                            Edit
+                            <Trash2 className="w-4 h-4" />
+                            Delete
                           </button>
-                          {user?.role === 'admin' && (
-                            <button 
-                              onClick={() => handleDelete(issue._id)}
-                              className="btn btn-danger btn-sm flex items-center gap-2"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                              Delete
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Issue Detail Modal */}
