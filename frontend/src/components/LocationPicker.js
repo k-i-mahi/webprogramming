@@ -8,15 +8,18 @@ const LocationPicker = ({
   onGeolocationError 
 }) => {
   const [currentLocation, setCurrentLocation] = useState({
-    lat: latitude || null,
-    lng: longitude || null
+    lat: latitude ? parseFloat(latitude) : null,
+    lng: longitude ? parseFloat(longitude) : null
   });
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [locationError, setLocationError] = useState('');
 
   useEffect(() => {
     if (latitude && longitude) {
-      setCurrentLocation({ lat: latitude, lng: longitude });
+      setCurrentLocation({ 
+        lat: parseFloat(latitude), 
+        lng: parseFloat(longitude) 
+      });
     }
   }, [latitude, longitude]);
 
@@ -69,9 +72,10 @@ const LocationPicker = ({
 
   const handleManualInput = (e) => {
     const { name, value } = e.target;
+    const numValue = value ? parseFloat(value) : null;
     const newLocation = {
       ...currentLocation,
-      [name === 'latitude' ? 'lat' : 'lng']: parseFloat(value) || null
+      [name === 'latitude' ? 'lat' : 'lng']: numValue
     };
     
     setCurrentLocation(newLocation);
@@ -167,7 +171,7 @@ const LocationPicker = ({
         </div>
       )}
 
-      {currentLocation.lat && currentLocation.lng && (
+      {currentLocation.lat !== null && currentLocation.lng !== null && (
         <div style={{ 
           color: '#28a745', 
           fontSize: '0.8rem', 
@@ -177,7 +181,7 @@ const LocationPicker = ({
           border: '1px solid #c3e6cb',
           borderRadius: '4px'
         }}>
-          ✅ Location set: {currentLocation.lat.toFixed(6)}, {currentLocation.lng.toFixed(6)}
+          ✅ Location set: {Number(currentLocation.lat).toFixed(6)}, {Number(currentLocation.lng).toFixed(6)}
         </div>
       )}
     </div>

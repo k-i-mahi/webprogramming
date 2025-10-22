@@ -1,426 +1,340 @@
 const Issue = require('../models/Issue');
-const Category = require('../models/Category');
-const User = require('../models/User');
-const path = require('path');
-const fs = require('fs');
-const cloudinary = require('cloudinary').v2;
+const { validationResult } = require('express-validator');
 
-// Configure Cloudinary if env set
-if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET
-  });
-}
-
-// @desc    Get all issues
-// @route   GET /api/issues
-// @access  Private
+// Get all issues
 const getIssues = async (req, res) => {
   try {
-    const { 
-      page = 1, 
-      limit = 10, 
-      status, 
-      category, 
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const {
+      status,
+      category,
       priority,
       search,
+      createdBy,
       sortBy = 'createdAt',
       sortOrder = 'desc',
-      assignedTo,
-      createdBy
+      limit = 100,
+      skip = 0
     } = req.query;
 
-    // Build query - role-based filtering is handled by middleware
-    let query = {};
+    let filter = {};
 
-    // Apply filters from query parameters
-    if (status) query.status = status;
-    if (category) query.category = category;
-    if (priority) query.priority = priority;
-    if (assignedTo) query.assignedTo = assignedTo;
-    if (createdBy) query.createdBy = createdBy;
+    if (status) filter.status = status;
+    if (category) filter.category = category;
+    if (priority) filter.priority = priority;
+    if (createdBy) filter.createdBy = createdBy;
+
     if (search) {
-      query.$or = [
+      filter.$or = [
         { title: { $regex: search, $options: 'i' } },
         { description: { $regex: search, $options: 'i' } }
       ];
     }
 
-    // Apply role-based filters from middleware
-    if (req.query.createdBy) query.createdBy = req.query.createdBy;
-    if (req.query.category) query.category = req.query.category;
-    if (req.query._id === 'nonexistent') query._id = 'nonexistent';
+    const sortOptions = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
 
-    // Build sort object
-    const sort = {};
-    sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
-
-    const issues = await Issue.find(query)
+    const issues = await Issue.find(filter)
+      .sort(sortOptions)
+      .limit(parseInt(limit) || 100)
+      .skip(parseInt(skip) || 0)
       .populate('category', 'name')
-      .populate('createdBy', 'name email role')
-      .populate('assignedTo', 'name email role')
-      .populate('comments.user', 'name email')
-      .populate('statusHistory.changedBy', 'name email role')
-      .sort(sort)
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .populate('createdBy', 'name role email')
+      .populate('assignedTo', 'name email')
+      .lean();
 
-    const total = await Issue.countDocuments(query);
+    const total = await Issue.countDocuments(filter);
 
     res.json({
+      success: true,
       issues,
-      totalPages: Math.ceil(total / limit),
-      currentPage: page,
+      count: issues.length,
       total
     });
   } catch (error) {
-    console.error('Get issues error:', error);
+    console.error('❌ getIssues error:', error);
     res.status(500).json({
-      message: 'Server error'
+      success: false,
+      message: 'Failed to fetch issues',
+      error: error.message
     });
   }
 };
 
-// @desc    Get issue by ID
-// @route   GET /api/issues/:id
-// @access  Private
+// Get issue by ID
 const getIssueById = async (req, res) => {
   try {
     const issue = await Issue.findById(req.params.id)
       .populate('category', 'name')
-      .populate('createdBy', 'name email role location')
-      .populate('assignedTo', 'name email role location')
+      .populate('createdBy', 'name role email')
+      .populate('assignedTo', 'name email')
       .populate('comments.user', 'name email role')
-      .populate('statusHistory.changedBy', 'name email role');
+      .populate('statusHistory.changedBy', 'name');
 
     if (!issue) {
       return res.status(404).json({
+        success: false,
         message: 'Issue not found'
       });
     }
 
-    // Access control is handled by middleware
-    res.json({ issue });
+    res.json({ success: true, issue });
   } catch (error) {
-    console.error('Get issue error:', error);
+    console.error('❌ getIssueById error:', error);
     res.status(500).json({
-      message: 'Server error'
+      success: false,
+      message: 'Failed to fetch issue',
+      error: error.message
     });
   }
 };
 
-// @desc    Create new issue
-// @route   POST /api/issues
-// @access  Private (Residents and Authorities)
+// Create issue
 const createIssue = async (req, res) => {
   try {
-    const { 
-      title, 
-      description, 
-      category, 
-      latitude, 
-      longitude, 
-      photoURL, 
-      priority 
-    } = req.body;
-
-    // Validate category exists
-    const categoryExists = await Category.findById(category);
-    if (!categoryExists) {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
       return res.status(400).json({
-        message: 'Category does not exist'
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
       });
     }
 
-    // Handle photo upload
-    let photoURLFinal = photoURL || '';
+    const { title, description, category, latitude, longitude, priority = 'Medium' } = req.body;
+
+    let photoURL = null;
     if (req.file) {
-      try {
-        if (process.env.CLOUDINARY_CLOUD_NAME) {
-          const uploadRes = await cloudinary.uploader.upload(req.file.path, {
-            folder: 'civita/issues'
-          });
-          photoURLFinal = uploadRes.secure_url;
-          fs.unlink(req.file.path, () => {});
-        } else {
-          // Local served URL
-          photoURLFinal = `${req.protocol}://${req.get('host')}/uploads/${path.basename(req.file.path)}`;
-        }
-      } catch (uploadErr) {
-        return res.status(400).json({ message: 'Image upload failed' });
-      }
+      photoURL = `/uploads/${req.file.filename}`;
     }
 
-    const issue = await Issue.create({
-      title,
-      description,
+    const newIssue = new Issue({
+      title: title.trim(),
+      description: description.trim(),
       category,
       location: {
-        latitude: parseFloat(latitude),
-        longitude: parseFloat(longitude)
+        type: 'Point',
+        coordinates: [parseFloat(longitude), parseFloat(latitude)]
       },
-      photoURL: photoURLFinal,
-      priority: priority || 'Medium',
+      photoURL,
+      priority,
       createdBy: req.user.id,
-      statusHistory: [{ status: 'Reported', changedBy: req.user.id }]
+      status: 'Reported',
+      statusHistory: [{
+        status: 'Reported',
+        changedAt: new Date(),
+        changedBy: req.user.id
+      }]
     });
 
-    const populatedIssue = await Issue.findById(issue._id)
-      .populate('category', 'name')
-      .populate('createdBy', 'name email role')
-      .populate('assignedTo', 'name email role');
+    await newIssue.save();
+    await newIssue.populate('category', 'name');
+    await newIssue.populate('createdBy', 'name role email');
 
     res.status(201).json({
+      success: true,
       message: 'Issue created successfully',
-      issue: populatedIssue
+      issue: newIssue
     });
   } catch (error) {
-    console.error('Create issue error:', error);
+    console.error('❌ createIssue error:', error);
     res.status(500).json({
-      message: 'Server error'
+      success: false,
+      message: 'Failed to create issue',
+      error: error.message
     });
   }
 };
 
-// @desc    Update issue
-// @route   PUT /api/issues/:id
-// @access  Private (Role-based access)
+// Update issue
 const updateIssue = async (req, res) => {
   try {
-    const { 
-      title, 
-      description, 
-      status, 
-      assignedTo, 
-      priority, 
-      estimatedResolution 
-    } = req.body;
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
 
+    const { title, description, category, status, priority, assignedTo, latitude, longitude } = req.body;
     const issue = await Issue.findById(req.params.id);
+
     if (!issue) {
       return res.status(404).json({
+        success: false,
         message: 'Issue not found'
       });
     }
 
-    // Access control is handled by middleware
+    if (title) issue.title = title.trim();
+    if (description) issue.description = description.trim();
+    if (category) issue.category = category;
+    if (priority) issue.priority = priority;
+    if (assignedTo !== undefined) issue.assignedTo = assignedTo;
 
-    // Validate assignedTo user if provided
-    if (assignedTo) {
-      const userExists = await User.findById(assignedTo);
-      if (!userExists) {
-        return res.status(400).json({
-          message: 'Assigned user does not exist'
-        });
-      }
+    if (latitude && longitude) {
+      issue.location = {
+        type: 'Point',
+        coordinates: [parseFloat(longitude), parseFloat(latitude)]
+      };
     }
 
-    const updateData = {};
-    if (title !== undefined) updateData.title = title;
-    if (description !== undefined) updateData.description = description;
-    if (status !== undefined) updateData.status = status;
-    if (assignedTo !== undefined) updateData.assignedTo = assignedTo;
-    if (priority !== undefined) updateData.priority = priority;
-    if (estimatedResolution !== undefined) updateData.estimatedResolution = estimatedResolution;
-
-    // If status is changing, append to history after update
-    const wasStatusChanged = status !== undefined && status !== issue.status;
-
-    const updatedIssue = await Issue.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true, runValidators: true }
-    ).populate('category', 'name')
-     .populate('createdBy', 'name email role')
-     .populate('assignedTo', 'name email role')
-     .populate('comments.user', 'name email role')
-     .populate('statusHistory.changedBy', 'name email role');
-
-    if (wasStatusChanged && updatedIssue) {
-      updatedIssue.statusHistory = updatedIssue.statusHistory || [];
-      updatedIssue.statusHistory.push({ status: updatedIssue.status, changedBy: req.user.id });
-      await updatedIssue.save();
+    if (status && status !== issue.status) {
+      issue.status = status;
+      issue.statusHistory.push({
+        status,
+        changedAt: new Date(),
+        changedBy: req.user.id
+      });
     }
+
+    await issue.save();
+    await issue.populate('category', 'name');
+    await issue.populate('createdBy', 'name role email');
+    await issue.populate('assignedTo', 'name email');
 
     res.json({
+      success: true,
       message: 'Issue updated successfully',
-      issue: updatedIssue
+      issue
     });
   } catch (error) {
-    console.error('Update issue error:', error);
+    console.error('❌ updateIssue error:', error);
     res.status(500).json({
-      message: 'Server error'
+      success: false,
+      message: 'Failed to update issue',
+      error: error.message
     });
   }
 };
 
-// @desc    Delete issue
-// @route   DELETE /api/issues/:id
-// @access  Private (Admin only)
+// Delete issue
 const deleteIssue = async (req, res) => {
   try {
-    const issue = await Issue.findById(req.params.id);
-    
+    const issue = await Issue.findByIdAndDelete(req.params.id);
+
     if (!issue) {
       return res.status(404).json({
+        success: false,
         message: 'Issue not found'
       });
     }
 
-    await Issue.findByIdAndDelete(req.params.id);
-
     res.json({
+      success: true,
       message: 'Issue deleted successfully'
     });
   } catch (error) {
-    console.error('Delete issue error:', error);
+    console.error('❌ deleteIssue error:', error);
     res.status(500).json({
-      message: 'Server error'
+      success: false,
+      message: 'Failed to delete issue',
+      error: error.message
     });
   }
 };
 
-// @desc    Add comment to issue
-// @route   POST /api/issues/:id/comments
-// @access  Private
+// Add comment
 const addComment = async (req, res) => {
   try {
-    const { comment } = req.body;
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
 
+    const { comment } = req.body;
     const issue = await Issue.findById(req.params.id);
+
     if (!issue) {
       return res.status(404).json({
+        success: false,
         message: 'Issue not found'
       });
     }
 
-    // Access control is handled by middleware
-
     issue.comments.push({
       user: req.user.id,
-      comment
+      text: comment.trim(),
+      createdAt: new Date()
     });
 
     await issue.save();
-
-    const updatedIssue = await Issue.findById(req.params.id)
-      .populate('category', 'name')
-      .populate('createdBy', 'name email role')
-      .populate('assignedTo', 'name email role')
-      .populate('comments.user', 'name email role');
+    await issue.populate('comments.user', 'name email role');
 
     res.json({
+      success: true,
       message: 'Comment added successfully',
-      issue: updatedIssue
+      issue
     });
   } catch (error) {
-    console.error('Add comment error:', error);
+    console.error('❌ addComment error:', error);
     res.status(500).json({
-      message: 'Server error'
+      success: false,
+      message: 'Failed to add comment',
+      error: error.message
     });
   }
 };
 
-// @desc    Get issues by location
-// @route   GET /api/issues/nearby
-// @access  Private
+// Get nearby issues
 const getNearbyIssues = async (req, res) => {
   try {
     const { latitude, longitude, radius = 5 } = req.query;
 
     if (!latitude || !longitude) {
       return res.status(400).json({
-        message: 'Latitude and longitude are required'
+        success: false,
+        message: 'Latitude and longitude required'
       });
     }
-
-    const lat = parseFloat(latitude);
-    const lng = parseFloat(longitude);
-    const rad = parseFloat(radius);
 
     const issues = await Issue.find({
       location: {
         $near: {
           $geometry: {
             type: 'Point',
-            coordinates: [lng, lat]
+            coordinates: [parseFloat(longitude), parseFloat(latitude)]
           },
-          $maxDistance: rad * 1000 // Convert km to meters
+          $maxDistance: parseFloat(radius) * 1000
         }
-      },
-      isActive: true
-    }).populate('category', 'name')
-      .populate('createdBy', 'name email role')
-      .populate('assignedTo', 'name email role')
-      .limit(50);
+      }
+    })
+      .populate('category', 'name')
+      .populate('createdBy', 'name role email');
 
     res.json({
+      success: true,
       issues,
-      center: { latitude: lat, longitude: lng },
-      radius: rad
+      count: issues.length
     });
   } catch (error) {
-    console.error('Get nearby issues error:', error);
+    console.error('❌ getNearbyIssues error:', error);
     res.status(500).json({
-      message: 'Server error'
+      success: false,
+      message: 'Failed to fetch nearby issues',
+      error: error.message
     });
   }
 };
 
-// @desc    Get issues statistics
-// @route   GET /api/issues/stats
-// @access  Private (Admin and Authority)
+// Get stats
 const getIssueStats = async (req, res) => {
   try {
-    const stats = await Issue.aggregate([
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
+    const stats = {
+      total: await Issue.countDocuments(),
+      reported: await Issue.countDocuments({ status: 'Reported' }),
+      inProgress: await Issue.countDocuments({ status: 'In Progress' }),
+      resolved: await Issue.countDocuments({ status: 'Resolved' })
+    };
 
-    const priorityStats = await Issue.aggregate([
-      {
-        $group: {
-          _id: '$priority',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    const categoryStats = await Issue.aggregate([
-      {
-        $lookup: {
-          from: 'categories',
-          localField: 'category',
-          foreignField: '_id',
-          as: 'categoryInfo'
-        }
-      },
-      {
-        $unwind: '$categoryInfo'
-      },
-      {
-        $group: {
-          _id: '$categoryInfo.name',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    res.json({
-      statusStats: stats,
-      priorityStats: priorityStats,
-      categoryStats: categoryStats
-    });
+    res.json({ success: true, stats });
   } catch (error) {
-    console.error('Get issue stats error:', error);
+    console.error('❌ getIssueStats error:', error);
     res.status(500).json({
-      message: 'Server error'
+      success: false,
+      message: 'Failed to fetch statistics',
+      error: error.message
     });
   }
 };

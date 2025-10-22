@@ -2,7 +2,6 @@ import axios from 'axios';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
-// Create axios instance
 const api = axios.create({
   baseURL: API_URL,
   headers: {
@@ -10,7 +9,6 @@ const api = axios.create({
   }
 });
 
-// Add token to requests
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
@@ -19,12 +17,9 @@ api.interceptors.request.use(
     }
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// Handle response errors
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -37,60 +32,112 @@ api.interceptors.response.use(
 );
 
 const issueService = {
-  // Get all issues
   getIssues: async (params = {}) => {
-    const response = await api.get('/issues', { params });
-    return response;
+    try {
+      const response = await api.get('/issues', { params });
+      console.log('✅ Issues fetched:', response.data);
+      // Backend returns { success: true, issues: [...], count: X, total: Y }
+      return response.data.issues || response.data || [];
+    } catch (error) {
+      console.error('❌ Error fetching issues:', error.response?.data || error.message);
+      throw error;
+    }
   },
 
-  // Get issue by ID
   getIssueById: async (id) => {
-    const response = await api.get(`/issues/${id}`);
-    return response;
+    try {
+      const response = await api.get(`/issues/${id}`);
+      return response.data.issue || response.data;
+    } catch (error) {
+      console.error('❌ Error fetching issue:', error);
+      throw error;
+    }
   },
 
-  // Create new issue
   createIssue: async (issueData) => {
-    const form = new FormData();
-    Object.entries(issueData).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        form.append(key, value);
-      }
-    });
-    const response = await api.post('/issues', form, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
-    return response;
+    try {
+      const form = new FormData();
+      Object.entries(issueData).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          if (key === 'photo') {
+            if (value instanceof File) {
+              form.append(key, value);
+            }
+          } else if (key === 'latitude' || key === 'longitude') {
+            form.append(key, String(parseFloat(value)));
+          } else {
+            form.append(key, value);
+          }
+        }
+      });
+      
+      const response = await api.post('/issues', form, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      console.log('✅ Issue created:', response.data);
+      return response.data.issue || response.data;
+    } catch (error) {
+      console.error('❌ Error creating issue:', error.response?.data || error.message);
+      throw error;
+    }
   },
 
-  // Update issue
   updateIssue: async (id, issueData) => {
-    const response = await api.put(`/issues/${id}`, issueData);
-    return response;
+    try {
+      const cleanData = { ...issueData };
+      if (cleanData.latitude) cleanData.latitude = parseFloat(cleanData.latitude);
+      if (cleanData.longitude) cleanData.longitude = parseFloat(cleanData.longitude);
+      
+      const response = await api.put(`/issues/${id}`, cleanData);
+      console.log('✅ Issue updated:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error updating issue:', error);
+      throw error;
+    }
   },
 
-  // Delete issue
   deleteIssue: async (id) => {
-    const response = await api.delete(`/issues/${id}`);
-    return response;
+    try {
+      const response = await api.delete(`/issues/${id}`);
+      console.log('✅ Issue deleted:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error deleting issue:', error);
+      throw error;
+    }
   },
 
-  // Add comment to issue
   addComment: async (id, comment) => {
-    const response = await api.post(`/issues/${id}/comments`, { comment });
-    return response;
+    try {
+      const response = await api.post(`/issues/${id}/comments`, { comment });
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error adding comment:', error);
+      throw error;
+    }
   },
 
-  // Get nearby issues
   getNearbyIssues: async (latitude, longitude, radius = 5) => {
-    const response = await api.get(`/issues/nearby?latitude=${latitude}&longitude=${longitude}&radius=${radius}`);
-    return response;
+    try {
+      const response = await api.get('/issues/nearby', { 
+        params: { latitude, longitude, radius }
+      });
+      return response.data.issues || [];
+    } catch (error) {
+      console.error('❌ Error fetching nearby issues:', error);
+      throw error;
+    }
   },
 
-  // Get issue statistics
   getIssueStats: async () => {
-    const response = await api.get('/issues/stats');
-    return response;
+    try {
+      const response = await api.get('/issues/stats');
+      return response.data.stats || response.data;
+    } catch (error) {
+      console.error('❌ Error fetching stats:', error);
+      throw error;
+    }
   }
 };
 

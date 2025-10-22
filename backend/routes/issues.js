@@ -45,26 +45,6 @@ const upload = multer({ storage, fileFilter, limits: { fileSize: 5 * 1024 * 1024
 
 const router = express.Router();
 
-// @route   GET /api/issues
-// @desc    Get all issues
-// @access  Private (Role-based filtering)
-router.get('/', protect, filterIssuesByRole, getIssues);
-
-// @route   GET /api/issues/stats
-// @desc    Get issue statistics
-// @access  Private (Admin and Authority)
-router.get('/stats', protect, canViewStats, getIssueStats);
-
-// @route   GET /api/issues/nearby
-// @desc    Get issues by location
-// @access  Private (Role-based filtering)
-router.get('/nearby', protect, filterIssuesByRole, getNearbyIssues);
-
-// @route   GET /api/issues/:id
-// @desc    Get issue by ID
-// @access  Private (Role-based access)
-router.get('/:id', protect, canAccessIssue, getIssueById);
-
 // @route   POST /api/issues
 // @desc    Create new issue
 // @access  Private (Residents and Authorities)
@@ -102,6 +82,26 @@ router.post('/', [
     .isIn(['Low', 'Medium', 'High', 'Critical'])
     .withMessage('Priority must be Low, Medium, High, or Critical')
 ], createIssue);
+
+// @route   GET /api/issues/stats
+// @desc    Get issue statistics
+// @access  Private (Admin and Authority)
+router.get('/stats', protect, canViewStats, getIssueStats);
+
+// @route   GET /api/issues/nearby
+// @desc    Get issues by location
+// @access  Private (Role-based filtering)
+router.get('/nearby', protect, filterIssuesByRole, getNearbyIssues);
+
+// @route   GET /api/issues/:id
+// @desc    Get issue by ID
+// @access  Private (Role-based access)
+router.get('/:id', protect, canAccessIssue, getIssueById);
+
+// @route   GET /api/issues
+// @desc    Get all issues
+// @access  Private (Role-based filtering)
+router.get('/', protect, filterIssuesByRole, getIssues);
 
 // @route   PUT /api/issues/:id
 // @desc    Update issue

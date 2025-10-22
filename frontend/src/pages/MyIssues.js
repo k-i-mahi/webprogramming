@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import issueService from '../services/issueService';
 
@@ -8,30 +8,44 @@ const MyIssues = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const loadMyIssues = useCallback(async () => {
+    setLoading(true);
+    try {
+      const issuesData = await issueService.getIssues({ 
+        createdBy: user.id, 
+        limit: 100, 
+        sortBy: 'createdAt', 
+        sortOrder: 'desc' 
+      });
+      
+      if (Array.isArray(issuesData)) {
+        setIssues(issuesData);
+      } else {
+        setIssues([]);
+      }
+      setError('');
+    } catch (err) {
+      console.error('❌ Failed to load issues:', err);
+      setError('Failed to load your issues');
+      setIssues([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user.id]);
+
   useEffect(() => {
     if (user?.id) {
       loadMyIssues();
     }
-  }, [user]);
-
-  const loadMyIssues = async () => {
-    try {
-      const response = await issueService.getIssues({ createdBy: user.id, limit: 100, sortBy: 'createdAt', sortOrder: 'desc' });
-      setIssues(response.data.issues);
-    } catch (err) {
-      setError('Failed to load your issues');
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [user?.id, loadMyIssues]);
 
   const getStatusColor = (status) => {
-    switch (status) {
-      case 'Reported': return '#ffc107';
-      case 'In Progress': return '#17a2b8';
-      case 'Resolved': return '#28a745';
-      default: return '#6c757d';
-    }
+    const colors = {
+      'Reported': '#ffc107',
+      'In Progress': '#17a2b8',
+      'Resolved': '#28a745'
+    };
+    return colors[status] || '#6c757d';
   };
 
   if (loading) {
@@ -49,9 +63,7 @@ const MyIssues = () => {
       <div className="card">
         <h1>My Issues</h1>
 
-        {error && (
-          <div className="alert alert-danger">{error}</div>
-        )}
+        {error && <div className="alert alert-danger">{error}</div>}
 
         {issues.length === 0 ? (
           <p>You haven't submitted any issues yet.</p>
@@ -63,16 +75,7 @@ const MyIssues = () => {
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
                       <h4 style={{ margin: 0 }}>{issue.title}</h4>
-                      <span 
-                        style={{ 
-                          padding: '0.25rem 0.5rem', 
-                          borderRadius: '4px', 
-                          backgroundColor: getStatusColor(issue.status),
-                          color: 'white',
-                          fontSize: '0.8rem',
-                          fontWeight: 'bold'
-                        }}
-                      >
+                      <span style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', backgroundColor: getStatusColor(issue.status), color: 'white', fontSize: '0.8rem', fontWeight: 'bold' }}>
                         {issue.status}
                       </span>
                     </div>
@@ -83,8 +86,9 @@ const MyIssues = () => {
                       <div style={{ marginBottom: '1rem' }}>
                         <img 
                           src={issue.photoURL} 
-                          alt="Issue photo" 
+                          alt="Issue submission" 
                           style={{ maxWidth: '200px', maxHeight: '150px', objectFit: 'cover', borderRadius: '4px' }}
+                          onError={(e) => { e.target.style.display = 'none'; }}
                         />
                       </div>
                     )}
@@ -98,33 +102,27 @@ const MyIssues = () => {
                           {issue.statusHistory
                             .sort((a, b) => new Date(b.changedAt) - new Date(a.changedAt))
                             .map((entry, idx) => (
-                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
-                              <div>
-                                <strong>{entry.status}</strong>
-                                <span style={{ color: '#666', marginLeft: '0.5rem' }}>
-                                  {new Date(entry.changedAt).toLocaleString()}
-                                </span>
+                              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
+                                <div>
+                                  <strong>{entry.status}</strong>
+                                  <span style={{ color: '#666', marginLeft: '0.5rem' }}>
+                                    {new Date(entry.changedAt).toLocaleString()}
+                                  </span>
+                                </div>
+                                <div style={{ color: '#666' }}>
+                                  {entry.changedBy?.name ? `by ${entry.changedBy.name}` : ''}
+                                </div>
                               </div>
-                              <div style={{ color: '#666' }}>
-                                {entry.changedBy?.name ? `by ${entry.changedBy.name}` : ''}
-                              </div>
-                            </div>
-                          ))}
+                            ))}
                         </div>
                       )}
                     </div>
                   </div>
 
                   <div style={{ textAlign: 'right', color: '#666', minWidth: '200px' }}>
-                    <div>
-                      <strong>Category:</strong> {issue.category?.name}
-                    </div>
-                    <div>
-                      <strong>Created:</strong> {new Date(issue.createdAt).toLocaleDateString()}
-                    </div>
-                    <div>
-                      <strong>Location:</strong> {issue.location?.latitude}, {issue.location?.longitude}
-                    </div>
+                    <div><strong>Category:</strong> {issue.category?.name || 'N/A'}</div>
+                    <div><strong>Created:</strong> {new Date(issue.createdAt).toLocaleDateString()}</div>
+                    <div><strong>Location:</strong> {issue.location?.coordinates?.[1]?.toFixed(4)}, {issue.location?.coordinates?.[0]?.toFixed(4)}</div>
                   </div>
                 </div>
               </div>
