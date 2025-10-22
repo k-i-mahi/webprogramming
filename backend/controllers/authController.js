@@ -1,7 +1,8 @@
-const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { validationResult } = require('express-validator');
+const jwt = require('jsonwebtoken');
 
-// Generate JWT Token
+// Generate JWT token
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRE || '7d',
@@ -12,22 +13,29 @@ const generateToken = (id) => {
 // @route   POST /api/auth/register
 // @access  Public
 const register = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
   try {
-    const { name, email, password, role, latitude, longitude } = req.body;
+    const {
+      name,
+      email,
+      password,
+      role,
+      gender,
+      dateOfBirth,
+      profession,
+      latitude,
+      longitude,
+      avatar,
+    } = req.body;
 
     // Check if user exists
     const userExists = await User.findOne({ email });
     if (userExists) {
-      return res.status(400).json({
-        message: 'User already exists with this email'
-      });
-    }
-
-    // Validate location coordinates
-    if (!latitude || !longitude) {
-      return res.status(400).json({
-        message: 'Location coordinates (latitude and longitude) are required'
-      });
+      return res.status(400).json({ message: 'User already exists' });
     }
 
     // Create user
@@ -36,34 +44,35 @@ const register = async (req, res) => {
       email,
       password,
       role: role || 'resident',
+      gender: gender || null,
+      dateOfBirth: dateOfBirth || null,
+      profession: profession || '',
       location: {
-        latitude: parseFloat(latitude),
-        longitude: parseFloat(longitude)
-      }
+        latitude,
+        longitude,
+      },
+      avatar: avatar || '',
     });
 
     if (user) {
       res.status(201).json({
-        message: 'User registered successfully',
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          location: user.location
-        },
-        token: generateToken(user._id)
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        gender: user.gender,
+        dateOfBirth: user.dateOfBirth,
+        profession: user.profession,
+        location: user.location,
+        avatar: user.avatar,
+        token: generateToken(user._id),
       });
     } else {
-      res.status(400).json({
-        message: 'Invalid user data'
-      });
+      res.status(400).json({ message: 'Invalid user data' });
     }
   } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({
-      message: 'Server error during registration'
-    });
+    console.error('Register error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
@@ -71,34 +80,43 @@ const register = async (req, res) => {
 // @route   POST /api/auth/login
 // @access  Public
 const login = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
   try {
     const { email, password } = req.body;
 
-    // Check for user
+    // Find user and include password
     const user = await User.findOne({ email }).select('+password');
 
-    if (user && (await user.comparePassword(password))) {
-      res.json({
-        message: 'Login successful',
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          location: user.location
-        },
-        token: generateToken(user._id)
-      });
-    } else {
-      res.status(401).json({
-        message: 'Invalid credentials'
-      });
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
+
+    // Check password
+    const isMatch = await user.comparePassword(password);
+
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    res.json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      gender: user.gender,
+      dateOfBirth: user.dateOfBirth,
+      profession: user.profession,
+      location: user.location,
+      avatar: user.avatar,
+      token: generateToken(user._id),
+    });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({
-      message: 'Server error during login'
-    });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -109,26 +127,29 @@ const getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
 
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
     res.json({
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        location: user.location,
-        avatar: user.avatar
-      }
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      gender: user.gender,
+      dateOfBirth: user.dateOfBirth,
+      profession: user.profession,
+      location: user.location,
+      avatar: user.avatar,
     });
   } catch (error) {
     console.error('Get user error:', error);
-    res.status(500).json({
-      message: 'Server error'
-    });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
 module.exports = {
   register,
   login,
-  getMe
+  getMe,
 };

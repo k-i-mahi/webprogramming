@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import '../styles/Auth.css';
 
 const Login = () => {
   const [formData, setFormData] = useState({
     email: '',
-    password: ''
+    password: '',
   });
   const [isLoading, setIsLoading] = useState(false);
-  const { login, isAuthenticated, error, clearError, user } = useAuth();
+  const [validationError, setValidationError] = useState('');
+  const { login, isAuthenticated, error, clearError } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -24,76 +26,82 @@ const Login = () => {
   const handleChange = (e) => {
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      [e.target.name]: e.target.value,
     });
+    setValidationError('');
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!formData.email || !formData.password) {
+      setValidationError('Email and password are required');
+      return;
+    }
+
     setIsLoading(true);
     try {
-      await login(formData);
-      // Navigation will be handled by useEffect
-    } catch (error) {
-      // Error is handled by context
+      await login(formData.email, formData.password);
+    } catch (err) {
+      setValidationError(err.message || 'Login failed');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="container">
-      <div style={{ maxWidth: '400px', margin: '2rem auto' }}>
-        <div className="card">
-          <h2 style={{ textAlign: 'center', marginBottom: '2rem' }}>Login</h2>
-          
-          {error && (
-            <div className="alert alert-danger">
-              {error}
-            </div>
+    <div className="auth-container">
+      <div className="auth-card">
+        <div className="auth-header">
+          <h2>Welcome Back</h2>
+          <p>Login to your account</p>
+        </div>
+
+        <form className="auth-form" onSubmit={handleSubmit}>
+          {(error || validationError) && (
+            <div className="error-message">{error || validationError}</div>
           )}
 
-          <form onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label htmlFor="email">Email</label>
-              <input
-                type="email"
-                id="email"
-                name="email"
-                className="form-control"
-                value={formData.email}
-                onChange={handleChange}
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="password">Password</label>
-              <input
-                type="password"
-                id="password"
-                name="password"
-                className="form-control"
-                value={formData.password}
-                onChange={handleChange}
-                required
-              />
-            </div>
-
-            <button 
-              type="submit" 
-              className="btn btn-primary" 
-              style={{ width: '100%' }}
+          <div className="form-group">
+            <label htmlFor="email">Email Address</label>
+            <input
+              type="email"
+              id="email"
+              name="email"
+              placeholder="your.email@example.com"
+              value={formData.email}
+              onChange={handleChange}
               disabled={isLoading}
-            >
-              {isLoading ? 'Logging in...' : 'Login'}
-            </button>
-          </form>
+              required
+            />
+          </div>
 
-          <p style={{ textAlign: 'center', marginTop: '1rem' }}>
+          <div className="form-group">
+            <label htmlFor="password">Password</label>
+            <input
+              type="password"
+              id="password"
+              name="password"
+              placeholder="Enter your password"
+              value={formData.password}
+              onChange={handleChange}
+              disabled={isLoading}
+              required
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Logging in...' : 'Login'}
+          </button>
+
+          <p className="auth-footer">
             Don't have an account? <Link to="/register">Register here</Link>
           </p>
-        </div>
+        </form>
       </div>
     </div>
   );
