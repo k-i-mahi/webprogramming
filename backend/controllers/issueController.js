@@ -29,33 +29,17 @@ const getIssues = async (req, res) => {
 
     const query = {};
 
-    // Filter by status
-    if (status) {
-      query.status = status;
-    }
+    if (status) query.status = status;
+    if (category) query.category = category;
+    if (priority) query.priority = priority;
 
-    // Filter by category
-    if (category) {
-      query.category = category;
-    }
-
-    // Filter by priority
-    if (priority) {
-      query.priority = priority;
-    }
-
-    // Filter by reporter
     if (reportedBy) {
       query.reportedBy =
         reportedBy === 'me' && req.user ? req.user.id : reportedBy;
     }
 
-    // Filter by assigned user
-    if (assignedTo) {
-      query.assignedTo = assignedTo;
-    }
+    if (assignedTo) query.assignedTo = assignedTo;
 
-    // Search by title or description
     if (search) {
       query.$or = [
         { title: { $regex: search, $options: 'i' } },
@@ -64,7 +48,6 @@ const getIssues = async (req, res) => {
       ];
     }
 
-    // Geospatial search
     if (latitude && longitude) {
       query['location.coordinates'] = {
         $near: {
@@ -130,8 +113,13 @@ const getIssueById = async (req, res) => {
       });
     }
 
-    // Increment view count using the instance method
-    await issue.incrementViews();
+    // Increment view count using the instance method (keeps stats in sync)
+    try {
+      await issue.incrementViews();
+    } catch (incErr) {
+      // don't block response if increment fails; log for debugging
+      console.error('Failed to increment views:', incErr);
+    }
 
     res.json({
       success: true,
@@ -390,7 +378,7 @@ const addComment = async (req, res) => {
     issue.comments.push(comment);
     await issue.save();
 
-    // Populate the newly added comment
+    // Populate the newly added comment's user
     await issue.populate('comments.user', 'name avatar role');
 
     const newComment = issue.comments[issue.comments.length - 1];
@@ -494,15 +482,28 @@ const voteOnIssue = async (req, res) => {
 
     await issue.save();
 
+    // Populate helpful fields before returning
+    await issue.populate([
+      { path: 'reportedBy', select: 'name avatar email' },
+      { path: 'category', select: 'name displayName icon color' },
+      { path: 'assignedTo', select: 'name avatar' },
+      { path: 'comments.user', select: 'name avatar role' },
+    ]);
+
+    // Build response object that includes computed stats
+    const issueResponse = issue.toObject();
+    issueResponse.stats = {
+      upvotes: issue.votes?.upvotes?.length || 0,
+      downvotes: issue.votes?.downvotes?.length || 0,
+      commentCount: issue.comments?.length || 0,
+      views: issue.views || 0,
+      followerCount: issue.followers?.length || 0,
+    };
+
     res.json({
       success: true,
       message: 'Vote recorded successfully',
-      data: {
-        upvotes: issue.votes.upvotes.length,
-        downvotes: issue.votes.downvotes.length,
-        voteScore: issue.votes.upvotes.length - issue.votes.downvotes.length,
-        userVote: voteType,
-      },
+      data: issueResponse,
     });
   } catch (error) {
     console.error('Vote on issue error:', error);
@@ -530,10 +531,7 @@ const toggleFollow = async (req, res) => {
       });
     }
 
-    // Initialize followers array if it doesn't exist
-    if (!issue.followers) {
-      issue.followers = [];
-    }
+    if (!issue.followers) issue.followers = [];
 
     const isFollowing = issue.followers.some(
       (id) => id.toString() === req.user.id,
@@ -577,13 +575,27 @@ const toggleFollow = async (req, res) => {
 
     await issue.save();
 
+    // Populate before returning
+    await issue.populate([
+      { path: 'reportedBy', select: 'name avatar email' },
+      { path: 'category', select: 'name displayName icon color' },
+      { path: 'assignedTo', select: 'name avatar' },
+      { path: 'comments.user', select: 'name avatar role' },
+    ]);
+
+    const issueResponse = issue.toObject();
+    issueResponse.stats = {
+      upvotes: issue.votes?.upvotes?.length || 0,
+      downvotes: issue.votes?.downvotes?.length || 0,
+      commentCount: issue.comments?.length || 0,
+      views: issue.views || 0,
+      followerCount: issue.followers?.length || 0,
+    };
+
     res.json({
       success: true,
       message: isFollowing ? 'Unfollowed issue' : 'Following issue',
-      data: {
-        isFollowing: !isFollowing,
-        followerCount: issue.followers.length,
-      },
+      data: issueResponse,
     });
   } catch (error) {
     console.error('Toggle follow error:', error);
@@ -831,26 +843,19 @@ const getIssueStats = async (req, res) => {
           $group: {
             _id: null,
             total: { $sum: 1 },
-            open: {
-              $sum: { $cond: [{ $eq: ['$status', 'open'] }, 1, 0] },
-            },
+            open: { $sum: { $cond: [{ $eq: ['$status', 'open'] }, 1, 0] } },
             inProgress: {
               $sum: { $cond: [{ $eq: ['$status', 'in-progress'] }, 1, 0] },
             },
             resolved: {
               $sum: { $cond: [{ $eq: ['$status', 'resolved'] }, 1, 0] },
             },
-            closed: {
-              $sum: { $cond: [{ $eq: ['$status', 'closed'] }, 1, 0] },
-            },
+            closed: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, 1, 0] } },
           },
         },
       ]),
-
       Issue.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
-
       Issue.aggregate([{ $group: { _id: '$priority', count: { $sum: 1 } } }]),
-
       Issue.aggregate([
         {
           $lookup: {

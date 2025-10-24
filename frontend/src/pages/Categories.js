@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+// Categories.js
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import categoryService from '../services/categoryService';
@@ -33,44 +34,84 @@ const Categories = () => {
   });
 
   const [formErrors, setFormErrors] = useState({});
-
-  // Memoize loadCategories to prevent recreation
-  const loadCategories = useCallback(async () => {
-    try {
-      setLoading(true);
-      const response = await categoryService.getCategories();
-      setCategories(response.data || []);
-    } catch (error) {
-      showError('Failed to load categories');
-      console.error('Load categories error:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [showError]); // Only depends on showError
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    loadCategories();
-  }, [loadCategories]); // Include loadCategories in dependencies
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  /**
+   * Load categories from service and set state.
+   * categoryService.getCategories() returns { data, pagination, success, message }.
+   */
+  const loadCategories = useCallback(
+    async (params = {}) => {
+      try {
+        setLoading(true);
+        console.log('📋 Loading categories...', params);
+        const response = await categoryService.getCategories(params);
+        // service returns { data: [...], pagination, success, message }
+        const data = response?.data ?? [];
+        console.log('✅ Categories loaded:', {
+          count: Array.isArray(data) ? data.length : 0,
+        });
+        if (mountedRef.current) setCategories(Array.isArray(data) ? data : []);
+        return data;
+      } catch (error) {
+        console.error('❌ Load categories error:', error);
+        const message =
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to load categories';
+        if (mountedRef.current) setCategories([]);
+        showError(message);
+        throw error;
+      } finally {
+        if (mountedRef.current) setLoading(false);
+      }
+    },
+    [showError],
+  );
+
+  useEffect(() => {
+    // initial load
+    loadCategories().catch(() => {
+      // already handled inside loadCategories
+    });
+  }, [loadCategories]);
 
   const validateForm = () => {
     const errors = {};
 
-    if (!formData.name.trim()) {
+    const name = (formData.name ?? '').toString().trim();
+    const displayName = (formData.displayName ?? '').toString().trim();
+    const icon = formData.icon ?? '';
+    const color = formData.color ?? '';
+    const order = formData.order;
+
+    if (!name) {
       errors.name = 'Name is required';
-    } else if (!/^[a-z0-9-]+$/.test(formData.name)) {
+    } else if (!/^[a-z0-9-]+$/.test(name)) {
       errors.name = 'Name must be lowercase alphanumeric with hyphens';
     }
 
-    if (!formData.displayName.trim()) {
+    if (!displayName) {
       errors.displayName = 'Display name is required';
     }
 
-    if (formData.icon && formData.icon.length > 10) {
+    if (icon && icon.length > 10) {
       errors.icon = 'Icon must be 10 characters or less';
     }
 
-    if (formData.color && !/^#[0-9A-Fa-f]{6}$/.test(formData.color)) {
+    if (color && !/^#[0-9A-Fa-f]{6}$/.test(color)) {
       errors.color = 'Invalid color format (use #RRGGBB)';
+    }
+
+    if (order !== undefined && order !== null && Number(order) < 0) {
+      errors.order = 'Order must be a positive number';
     }
 
     setFormErrors(errors);
@@ -79,30 +120,35 @@ const Categories = () => {
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
+    let v = value;
+
+    if (type === 'checkbox') v = checked;
+    if (type === 'number') v = value === '' ? '' : Number(value);
+
     setFormData((prev) => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value,
+      [name]: v,
     }));
 
-    // Clear error for this field
     if (formErrors[name]) {
-      setFormErrors((prev) => ({
-        ...prev,
-        [name]: '',
-      }));
+      setFormErrors((prev) => ({ ...prev, [name]: '' }));
     }
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!validateForm()) {
-      return;
-    }
+    e?.preventDefault?.();
+    if (!validateForm()) return;
 
     try {
+      console.log('📋 Submitting category:', {
+        editing: !!editingCategory,
+        payload: formData,
+      });
+
       if (editingCategory) {
-        await categoryService.updateCategory(editingCategory._id, formData);
+        // prefer using id from editingCategory (supports _id or id)
+        const id = editingCategory._id ?? editingCategory.id;
+        await categoryService.updateCategory(id, formData);
         showSuccess('Category updated successfully');
       } else {
         await categoryService.createCategory(formData);
@@ -110,9 +156,12 @@ const Categories = () => {
       }
 
       handleCloseModal();
-      loadCategories();
+      await loadCategories();
     } catch (error) {
-      showError(error.response?.data?.message || 'Operation failed');
+      console.error('❌ Submit error:', error);
+      const message =
+        error?.response?.data?.message || error?.message || 'Operation failed';
+      showError(message);
     }
   };
 
@@ -124,36 +173,45 @@ const Categories = () => {
       description: category.description || '',
       icon: category.icon || '',
       color: category.color || '#667eea',
-      order: category.order || 0,
+      order: category.order ?? 0,
       isActive: category.isActive !== undefined ? category.isActive : true,
     });
+    setFormErrors({});
     setShowModal(true);
   };
 
   const handleDelete = async () => {
     if (!deleteConfirm.category) return;
-
     try {
-      await categoryService.deleteCategory(deleteConfirm.category._id);
+      const id = deleteConfirm.category._id ?? deleteConfirm.category.id;
+      await categoryService.deleteCategory(id);
       showSuccess('Category deleted successfully');
       setDeleteConfirm({ show: false, category: null });
-      loadCategories();
+      await loadCategories();
     } catch (error) {
-      showError(error.response?.data?.message || 'Failed to delete category');
+      console.error('❌ Delete error:', error);
+      const message =
+        error?.response?.data?.message || 'Failed to delete category';
+      showError(message);
     }
   };
 
   const handleToggleStatus = async (category) => {
     try {
-      await categoryService.toggleCategoryStatus(category._id);
+      const id = category._id ?? category.id;
+      console.log('📋 Toggling status for:', id);
+      await categoryService.toggleCategoryStatus(id);
       showSuccess(
         `Category ${
           category.isActive ? 'deactivated' : 'activated'
         } successfully`,
       );
-      loadCategories();
+      await loadCategories();
     } catch (error) {
-      showError('Failed to update category status');
+      console.error('❌ Toggle status error:', error);
+      const message =
+        error?.response?.data?.message || 'Failed to update category status';
+      showError(message);
     }
   };
 
@@ -172,15 +230,17 @@ const Categories = () => {
     setFormErrors({});
   };
 
-  const filteredCategories = categories.filter((cat) => {
-    const matchesSearch =
-      cat.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      cat.displayName.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredCategories = (categories || []).filter((cat) => {
+    const q = (searchQuery ?? '').toString().toLowerCase().trim();
+    const name = (cat?.name ?? '').toString().toLowerCase();
+    const display = (cat?.displayName ?? '').toString().toLowerCase();
+
+    const matchesSearch = !q || name.includes(q) || display.includes(q);
 
     const matchesStatus =
       filterStatus === 'all' ||
-      (filterStatus === 'active' && cat.isActive) ||
-      (filterStatus === 'inactive' && !cat.isActive);
+      (filterStatus === 'active' && cat?.isActive) ||
+      (filterStatus === 'inactive' && !cat?.isActive);
 
     return matchesSearch && matchesStatus;
   });
@@ -221,7 +281,20 @@ const Categories = () => {
           </div>
           <button
             className="btn btn-primary"
-            onClick={() => setShowModal(true)}
+            onClick={() => {
+              setEditingCategory(null);
+              setFormErrors({});
+              setFormData({
+                name: '',
+                displayName: '',
+                description: '',
+                icon: '',
+                color: '#667eea',
+                order: 0,
+                isActive: true,
+              });
+              setShowModal(true);
+            }}
           >
             <span className="btn-icon">➕</span>
             <span>Add Category</span>
@@ -243,6 +316,7 @@ const Categories = () => {
               <button
                 className="search-clear"
                 onClick={() => setSearchQuery('')}
+                aria-label="Clear search"
               >
                 ✕
               </button>
@@ -323,80 +397,91 @@ const Categories = () => {
           />
         ) : (
           <div className="categories-grid">
-            {filteredCategories.map((category) => (
-              <div key={category._id} className="category-card">
-                <div className="category-header">
-                  <div
-                    className="category-icon-box"
-                    style={{ background: category.color }}
-                  >
-                    <span className="category-icon-large">
-                      {category.icon || '📁'}
-                    </span>
-                  </div>
-                  <div className="category-actions">
-                    <button
-                      className="action-btn"
-                      onClick={() => handleEdit(category)}
-                      title="Edit"
+            {filteredCategories.map((category) => {
+              const id = category._id ?? category.id;
+              return (
+                <div key={id} className="category-card">
+                  <div className="category-header">
+                    <div
+                      className="category-icon-box"
+                      style={{ background: category.color ?? '#eee' }}
                     >
-                      ✏️
-                    </button>
-                    <button
-                      className="action-btn"
-                      onClick={() => handleToggleStatus(category)}
-                      title={category.isActive ? 'Deactivate' : 'Activate'}
-                    >
-                      {category.isActive ? '🔓' : '🔒'}
-                    </button>
-                    <button
-                      className="action-btn danger"
-                      onClick={() => setDeleteConfirm({ show: true, category })}
-                      title="Delete"
-                    >
-                      🗑️
-                    </button>
-                  </div>
-                </div>
-
-                <div className="category-body">
-                  <div className="category-title-row">
-                    <h3 className="category-title">{category.displayName}</h3>
-                    {!category.isActive && (
-                      <Badge type="custom" value="Inactive" variant="#6b7280" />
-                    )}
-                  </div>
-
-                  <p className="category-name">@{category.name}</p>
-
-                  {category.description && (
-                    <p className="category-description">
-                      {category.description}
-                    </p>
-                  )}
-
-                  <div className="category-meta">
-                    <div className="meta-item">
-                      <span className="meta-icon">📝</span>
-                      <span className="meta-text">
-                        {category.metadata?.issueCount || 0} issues
+                      <span className="category-icon-large">
+                        {category.icon || '📁'}
                       </span>
                     </div>
-                    <div className="meta-item">
-                      <span className="meta-icon">📊</span>
-                      <span className="meta-text">Order: {category.order}</span>
+                    <div className="category-actions">
+                      <button
+                        className="action-btn"
+                        onClick={() => handleEdit(category)}
+                        title="Edit"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        className="action-btn"
+                        onClick={() => handleToggleStatus(category)}
+                        title={category.isActive ? 'Deactivate' : 'Activate'}
+                      >
+                        {category.isActive ? '🔓' : '🔒'}
+                      </button>
+                      <button
+                        className="action-btn danger"
+                        onClick={() =>
+                          setDeleteConfirm({ show: true, category })
+                        }
+                        title="Delete"
+                      >
+                        🗑️
+                      </button>
                     </div>
-                    <div className="meta-item">
-                      <span className="meta-icon">🎨</span>
-                      <div
-                        className="color-preview"
-                        style={{ background: category.color }}
-                      />
+                  </div>
+
+                  <div className="category-body">
+                    <div className="category-title-row">
+                      <h3 className="category-title">{category.displayName}</h3>
+                      {!category.isActive && (
+                        <Badge
+                          type="custom"
+                          value="Inactive"
+                          variant="#6b7280"
+                        />
+                      )}
+                    </div>
+
+                    <p className="category-name">@{category.name}</p>
+
+                    {category.description && (
+                      <p className="category-description">
+                        {category.description}
+                      </p>
+                    )}
+
+                    <div className="category-meta">
+                      <div className="meta-item">
+                        <span className="meta-icon">📝</span>
+                        <span className="meta-text">
+                          {category.metadata?.issueCount || 0} issues
+                        </span>
+                      </div>
+                      <div className="meta-item">
+                        <span className="meta-icon">📊</span>
+                        <span className="meta-text">
+                          Order: {category.order ?? 0}
+                        </span>
+                      </div>
+                      <div className="meta-item">
+                        <span className="meta-icon">🎨</span>
+                        <div
+                          className="color-preview"
+                          style={{ background: category.color ?? '#667eea' }}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -417,7 +502,7 @@ const Categories = () => {
               Cancel
             </button>
             <button
-              type="submit"
+              type="button"
               className="btn btn-primary"
               onClick={handleSubmit}
             >
@@ -440,7 +525,7 @@ const Categories = () => {
               onChange={handleInputChange}
               className={`form-input ${formErrors.name ? 'error' : ''}`}
               placeholder="e.g., water-supply"
-              disabled={!!editingCategory}
+              disabled={!!editingCategory} // prevent changing slug after creation
             />
             {formErrors.name && (
               <span className="field-error">{formErrors.name}</span>
@@ -513,7 +598,7 @@ const Categories = () => {
               <div className="color-input-wrapper">
                 <input
                   type="color"
-                  id="color"
+                  id="color-picker"
                   name="color"
                   value={formData.color}
                   onChange={handleInputChange}
@@ -557,7 +642,7 @@ const Categories = () => {
               <input
                 type="checkbox"
                 name="isActive"
-                checked={formData.isActive}
+                checked={!!formData.isActive}
                 onChange={handleInputChange}
               />
               <span>Active (visible to users)</span>

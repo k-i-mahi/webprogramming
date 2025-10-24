@@ -137,6 +137,19 @@ const issueSchema = new mongoose.Schema(
     ],
     resolvedAt: Date,
     closedAt: Date,
+
+    // --- Added fields ---
+    rejectionReason: { type: String, default: null },
+    tags: { type: [String], default: [] },
+    views: { type: Number, default: 0 },
+    stats: {
+      upvotes: { type: Number, default: 0 },
+      downvotes: { type: Number, default: 0 },
+      commentCount: { type: Number, default: 0 },
+      views: { type: Number, default: 0 },
+      followerCount: { type: Number, default: 0 },
+    },
+    // --------------------
   },
   {
     timestamps: true,
@@ -152,5 +165,43 @@ issueSchema.index({ assignedTo: 1 });
 issueSchema.index({ 'votes.upvotes': 1 });
 issueSchema.index({ 'votes.downvotes': 1 });
 issueSchema.index({ followers: 1 });
+issueSchema.index({ tags: 1 });
+
+// Pre-save middleware to auto-calculate stats when relevant fields changed
+issueSchema.pre('save', function (next) {
+  // Only recalc when votes/comments/followers/views changed OR stats is empty
+  if (
+    this.isModified('votes') ||
+    this.isModified('comments') ||
+    this.isModified('followers') ||
+    this.isModified('views') ||
+    !this.stats
+  ) {
+    const up = this.votes?.upvotes?.length || 0;
+    const down = this.votes?.downvotes?.length || 0;
+    const comments = this.comments?.length || 0;
+    const followers = this.followers?.length || 0;
+    const views = this.views || 0;
+
+    this.stats = {
+      upvotes: up,
+      downvotes: down,
+      commentCount: comments,
+      views: views,
+      followerCount: followers,
+    };
+  }
+  next();
+});
+
+// Instance method to increment views atomically and update stats.views
+issueSchema.methods.incrementViews = async function () {
+  // Use document increment then save
+  this.views = (this.views || 0) + 1;
+  // Keep stats.views in sync
+  if (!this.stats) this.stats = {};
+  this.stats.views = this.views;
+  return this.save();
+};
 
 module.exports = mongoose.model('Issue', issueSchema);

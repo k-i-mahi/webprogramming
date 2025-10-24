@@ -23,9 +23,7 @@ export const IssueProvider = ({ children }) => {
     totalPages: 0,
   });
 
-  const clearError = useCallback(() => {
-    setError(null);
-  }, []);
+  const clearError = useCallback(() => setError(null), []);
 
   // Fetch all issues
   const fetchIssues = useCallback(async (params = {}) => {
@@ -34,12 +32,8 @@ export const IssueProvider = ({ children }) => {
       setError(null);
 
       const response = await issueService.getIssues(params);
-
       setIssues(response.data || []);
-
-      if (response.pagination) {
-        setPagination(response.pagination);
-      }
+      if (response.pagination) setPagination(response.pagination);
 
       return response.data;
     } catch (err) {
@@ -59,9 +53,7 @@ export const IssueProvider = ({ children }) => {
       setError(null);
 
       const response = await issueService.getIssueById(id);
-
       setCurrentIssue(response.data);
-
       return response.data;
     } catch (err) {
       const errorMessage =
@@ -80,8 +72,6 @@ export const IssueProvider = ({ children }) => {
       setError(null);
 
       const response = await issueService.createIssue(issueData);
-
-      // Add new issue to the list
       setIssues((prev) => [response.data, ...prev]);
 
       return response.data;
@@ -96,167 +86,108 @@ export const IssueProvider = ({ children }) => {
   }, []);
 
   // Update issue
-  const updateIssue = useCallback(
-    async (id, issueData) => {
-      try {
-        setLoading(true);
-        setError(null);
+  const updateIssue = useCallback(async (id, issueData) => {
+    try {
+      setLoading(true);
+      setError(null);
 
-        const response = await issueService.updateIssue(id, issueData);
+      const response = await issueService.updateIssue(id, issueData);
+      setIssues((prev) =>
+        prev.map((issue) => (issue._id === id ? response.data : issue)),
+      );
+      setCurrentIssue((prev) => (prev?._id === id ? response.data : prev));
 
-        // Update issue in the list
-        setIssues((prev) =>
-          prev.map((issue) => (issue._id === id ? response.data : issue)),
-        );
-
-        // Update current issue if it's the same
-        if (currentIssue?._id === id) {
-          setCurrentIssue(response.data);
-        }
-
-        return response.data;
-      } catch (err) {
-        const errorMessage =
-          err.response?.data?.message || 'Failed to update issue';
-        setError(errorMessage);
-        throw err;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [currentIssue],
-  );
+      return response.data;
+    } catch (err) {
+      const errorMessage =
+        err.response?.data?.message || 'Failed to update issue';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   // Delete issue
-  const deleteIssue = useCallback(
-    async (id) => {
-      try {
-        setLoading(true);
-        setError(null);
+  const deleteIssue = useCallback(async (id) => {
+    try {
+      setLoading(true);
+      setError(null);
 
-        await issueService.deleteIssue(id);
+      await issueService.deleteIssue(id);
+      setIssues((prev) => prev.filter((issue) => issue._id !== id));
+      setCurrentIssue((prev) => (prev?._id === id ? null : prev));
 
-        // Remove issue from the list
-        setIssues((prev) => prev.filter((issue) => issue._id !== id));
-
-        // Clear current issue if it's the deleted one
-        if (currentIssue?._id === id) {
-          setCurrentIssue(null);
-        }
-
-        return true;
-      } catch (err) {
-        const errorMessage =
-          err.response?.data?.message || 'Failed to delete issue';
-        setError(errorMessage);
-        throw err;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [currentIssue],
-  );
+      return true;
+    } catch (err) {
+      const errorMessage =
+        err.response?.data?.message || 'Failed to delete issue';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   // Vote on issue
-  const voteOnIssue = useCallback(
-    async (id, voteType) => {
-      try {
-        const response = await issueService.voteOnIssue(id, voteType);
+  const voteOnIssue = useCallback(async (id, voteType) => {
+    try {
+      setError(null);
+      setLoading(true);
 
-        console.log('🗳️ Vote response in context:', response);
+      const response = await issueService.voteOnIssue(id, voteType);
+      const updatedIssue = response.data; // Full issue from backend
 
-        // Update issue in the list with new vote data
-        setIssues((prev) =>
-          prev.map((issue) => {
-            if (issue._id === id) {
-              // Backend returns the full issue with updated votes
-              return response.data.issue || {
-                ...issue,
-                votes: response.data.votes || response.data,
-                stats: {
-                  ...issue.stats,
-                  upvotes: response.data.upvotes || response.data.votes?.upvotes?.length || 0,
-                  downvotes: response.data.downvotes || response.data.votes?.downvotes?.length || 0,
-                },
-              };
-            }
-            return issue;
-          }),
-        );
+      setIssues((prev) =>
+        prev.map((issue) => (issue._id === id ? updatedIssue : issue)),
+      );
+      setCurrentIssue((prev) => (prev?._id === id ? updatedIssue : prev));
 
-        // Update current issue if it's the same
-        if (currentIssue?._id === id) {
-          setCurrentIssue((prev) => ({
-            ...prev,
-            votes: response.data.votes || response.data,
-            stats: {
-              ...prev.stats,
-              upvotes: response.data.upvotes || response.data.votes?.upvotes?.length || 0,
-              downvotes: response.data.downvotes || response.data.votes?.downvotes?.length || 0,
-            },
-          }));
-        }
+      return updatedIssue;
+    } catch (err) {
+      const errorMessage =
+        err.response?.data?.message || err.message || 'Failed to vote';
+      setError(errorMessage);
+      console.error('❌ Vote error in context:', err);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-        return response.data;
-      } catch (err) {
-        const errorMessage = err.response?.data?.message || err.message || 'Failed to vote';
-        setError(errorMessage);
-        console.error('❌ Vote error in context:', err);
-        throw err;
-      }
-    },
-    [currentIssue],
-  );
+  // Toggle follow issue
+  const toggleFollow = useCallback(async (id) => {
+    try {
+      setError(null);
+      setLoading(true);
 
-  // Toggle follow
-  const toggleFollow = useCallback(
-    async (id) => {
-      try {
-        const response = await issueService.toggleFollow(id);
+      const response = await issueService.toggleFollow(id);
+      const updatedIssue = response.data; // Full issue from backend
 
-        console.log('👁️ Toggle follow response in context:', response);
+      setIssues((prev) =>
+        prev.map((issue) => (issue._id === id ? updatedIssue : issue)),
+      );
+      setCurrentIssue((prev) => (prev?._id === id ? updatedIssue : prev));
 
-        // Refresh the current issue data to get accurate follower info
-        if (currentIssue?._id === id) {
-          const refreshed = await issueService.getIssueById(id);
-          setCurrentIssue(refreshed.data);
-        }
-
-        // Update issues list - refetch to ensure accuracy
-        setIssues((prev) =>
-          prev.map((issue) => {
-            if (issue._id === id) {
-              // Backend returns the full issue with updated followers
-              return response.data.issue || {
-                ...issue,
-                followers: response.data.followers || issue.followers,
-              };
-            }
-            return issue;
-          }),
-        );
-
-        return response.data;
-      } catch (err) {
-        const errorMessage =
-          err.response?.data?.message || err.message || 'Failed to toggle follow';
-        setError(errorMessage);
-        console.error('❌ Toggle follow error in context:', err);
-        throw err;
-      }
-    },
-    [currentIssue],
-  );
+      return updatedIssue;
+    } catch (err) {
+      const errorMessage =
+        err.response?.data?.message || err.message || 'Failed to toggle follow';
+      setError(errorMessage);
+      console.error('❌ Toggle follow error in context:', err);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   const value = {
-    // State
     issues,
     currentIssue,
     loading,
     error,
     pagination,
 
-    // Actions
     fetchIssues,
     fetchIssue,
     createIssue,

@@ -218,7 +218,7 @@ const issueService = {
         voteType,
       });
       return {
-        data: response.data.data || response.data
+        data: response.data.data 
       };
     } catch (error) {
       console.error('Vote on issue error:', error);

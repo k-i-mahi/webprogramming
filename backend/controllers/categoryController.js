@@ -13,6 +13,18 @@ const getCategories = async (req, res) => {
       sort = 'order',
     } = req.query;
 
+    const pageInt = parseInt(page) || 1;
+    const limitInt = parseInt(limit) || 50;
+
+    console.log('📋 Get categories request:', {
+      page: pageInt,
+      limit: limitInt,
+      search,
+      isActive,
+      sort,
+      requester: req.user ? req.user._id : 'anonymous',
+    });
+
     // Build query
     const query = {};
 
@@ -46,19 +58,25 @@ const getCategories = async (req, res) => {
     const categories = await Category.find(query)
       .populate('parent', 'name displayName icon')
       .sort(sortOption)
-      .limit(parseInt(limit))
-      .skip((page - 1) * limit);
+      .limit(limitInt)
+      .skip((pageInt - 1) * limitInt);
 
     const total = await Category.countDocuments(query);
+
+    console.log('✅ Categories fetched:', {
+      count: categories.length,
+      total,
+      firstCategory: categories[0] || null,
+    });
 
     res.json({
       success: true,
       data: categories,
       pagination: {
         total,
-        totalPages: Math.ceil(total / limit),
-        currentPage: parseInt(page),
-        limit: parseInt(limit),
+        totalPages: Math.ceil(total / limitInt),
+        currentPage: pageInt,
+        limit: limitInt,
       },
     });
   } catch (error) {
@@ -66,6 +84,7 @@ const getCategories = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error fetching categories',
+      error: error.message,
     });
   }
 };
@@ -75,12 +94,15 @@ const getCategories = async (req, res) => {
 // @access  Public
 const getCategory = async (req, res) => {
   try {
+    console.log('📋 Get category request:', { id: req.params.id });
+
     const category = await Category.findById(req.params.id).populate(
       'parent',
       'name displayName icon color',
     );
 
     if (!category) {
+      console.warn('⚠️ Category not found:', req.params.id);
       return res.status(404).json({
         success: false,
         message: 'Category not found',
@@ -91,6 +113,11 @@ const getCategory = async (req, res) => {
     const subcategories = await Category.find({ parent: category._id }).sort({
       order: 1,
       name: 1,
+    });
+
+    console.log('✅ Category fetched:', {
+      id: category._id,
+      subcount: subcategories.length,
     });
 
     res.json({
@@ -105,6 +132,7 @@ const getCategory = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error fetching category',
+      error: error.message,
     });
   }
 };
@@ -114,8 +142,20 @@ const getCategory = async (req, res) => {
 // @access  Private/Admin
 const createCategory = async (req, res) => {
   try {
+    console.log('📋 Create category request:', {
+      body: req.body,
+      requester: req.user ? req.user._id : 'anonymous',
+    });
+
     const { name, displayName, description, icon, color, parent, order } =
       req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name is required',
+      });
+    }
 
     // Check if category already exists
     const existingCategory = await Category.findOne({
@@ -123,6 +163,7 @@ const createCategory = async (req, res) => {
     });
 
     if (existingCategory) {
+      console.warn('⚠️ Create failed - duplicate name:', name);
       return res.status(400).json({
         success: false,
         message: 'Category with this name already exists',
@@ -149,6 +190,12 @@ const createCategory = async (req, res) => {
       parent: parent || null,
       order: order || 0,
       isActive: true,
+      metadata: { issueCount: 0, resolvedCount: 0 },
+    });
+
+    console.log('✅ Category created:', {
+      id: category._id,
+      name: category.name,
     });
 
     res.status(201).json({
@@ -161,6 +208,7 @@ const createCategory = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error creating category',
+      error: error.message,
     });
   }
 };
@@ -170,9 +218,15 @@ const createCategory = async (req, res) => {
 // @access  Private/Admin
 const updateCategory = async (req, res) => {
   try {
+    console.log('📋 Update category request:', {
+      id: req.params.id,
+      body: req.body,
+    });
+
     const category = await Category.findById(req.params.id);
 
     if (!category) {
+      console.warn('⚠️ Update failed - category not found:', req.params.id);
       return res.status(404).json({
         success: false,
         message: 'Category not found',
@@ -198,6 +252,7 @@ const updateCategory = async (req, res) => {
       });
 
       if (existingCategory) {
+        console.warn('⚠️ Update failed - duplicate name:', name);
         return res.status(400).json({
           success: false,
           message: 'Category with this name already exists',
@@ -222,7 +277,7 @@ const updateCategory = async (req, res) => {
         });
       }
 
-      // Check if parent has this category as parent (circular reference)
+      // Check for simple circular reference (parent->parent == this)
       if (
         parentCategory.parent &&
         parentCategory.parent.toString() === req.params.id
@@ -246,6 +301,8 @@ const updateCategory = async (req, res) => {
 
     await category.save();
 
+    console.log('✅ Category updated:', { id: category._id });
+
     res.json({
       success: true,
       message: 'Category updated successfully',
@@ -256,6 +313,7 @@ const updateCategory = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error updating category',
+      error: error.message,
     });
   }
 };
@@ -265,9 +323,12 @@ const updateCategory = async (req, res) => {
 // @access  Private/Admin
 const deleteCategory = async (req, res) => {
   try {
+    console.log('📋 Delete category request:', { id: req.params.id });
+
     const category = await Category.findById(req.params.id);
 
     if (!category) {
+      console.warn('⚠️ Delete failed - category not found:', req.params.id);
       return res.status(404).json({
         success: false,
         message: 'Category not found',
@@ -299,6 +360,8 @@ const deleteCategory = async (req, res) => {
 
     await category.deleteOne();
 
+    console.log('✅ Category deleted:', { id: req.params.id });
+
     res.json({
       success: true,
       message: 'Category deleted successfully',
@@ -308,6 +371,7 @@ const deleteCategory = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error deleting category',
+      error: error.message,
     });
   }
 };
@@ -317,9 +381,12 @@ const deleteCategory = async (req, res) => {
 // @access  Private/Admin
 const toggleCategoryStatus = async (req, res) => {
   try {
+    console.log('📋 Toggle category status request:', { id: req.params.id });
+
     const category = await Category.findById(req.params.id);
 
     if (!category) {
+      console.warn('⚠️ Toggle failed - category not found:', req.params.id);
       return res.status(404).json({
         success: false,
         message: 'Category not found',
@@ -329,22 +396,25 @@ const toggleCategoryStatus = async (req, res) => {
     category.isActive = !category.isActive;
     await category.save();
 
+    console.log('✅ Category status toggled:', {
+      id: category._id,
+      isActive: category.isActive,
+    });
+
+    // Return full category object (as requested)
     res.json({
       success: true,
       message: `Category ${
         category.isActive ? 'activated' : 'deactivated'
       } successfully`,
-      data: {
-        _id: category._id,
-        name: category.name,
-        isActive: category.isActive,
-      },
+      data: category,
     });
   } catch (error) {
     console.error('Toggle category status error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error toggling category status',
+      error: error.message,
     });
   }
 };
@@ -354,9 +424,12 @@ const toggleCategoryStatus = async (req, res) => {
 // @access  Public
 const getCategoryStats = async (req, res) => {
   try {
+    console.log('📋 Get category stats request:', { id: req.params.id });
+
     const category = await Category.findById(req.params.id);
 
     if (!category) {
+      console.warn('⚠️ Stats failed - category not found:', req.params.id);
       return res.status(404).json({
         success: false,
         message: 'Category not found',
@@ -385,14 +458,23 @@ const getCategoryStats = async (req, res) => {
     };
 
     stats.forEach((stat) => {
-      statsObj[stat._id.replace('-', '')] = stat.count;
+      // convert keys like 'in-progress' => 'inProgress'
+      const key = stat._id.replace(/-([a-z])/g, (m, c) => c.toUpperCase());
+      statsObj[key] = stat.count;
       statsObj.total += stat.count;
     });
 
     // Update category metadata
+    category.metadata = category.metadata || {};
     category.metadata.issueCount = statsObj.total;
-    category.metadata.resolvedCount = statsObj.resolved + statsObj.closed;
+    category.metadata.resolvedCount =
+      (statsObj.resolved || 0) + (statsObj.closed || 0);
     await category.save();
+
+    console.log('✅ Category stats calculated:', {
+      id: category._id,
+      total: statsObj.total,
+    });
 
     res.json({
       success: true,
@@ -412,6 +494,7 @@ const getCategoryStats = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error fetching statistics',
+      error: error.message,
     });
   }
 };
@@ -421,6 +504,8 @@ const getCategoryStats = async (req, res) => {
 // @access  Public
 const getAllCategoriesStats = async (req, res) => {
   try {
+    console.log('📋 Get all categories stats request');
+
     const Issue = require('../models/Issue');
 
     const stats = await Issue.aggregate([
@@ -464,6 +549,8 @@ const getAllCategoriesStats = async (req, res) => {
       { $sort: { total: -1 } },
     ]);
 
+    console.log('✅ All categories stats fetched:', { count: stats.length });
+
     res.json({
       success: true,
       data: stats,
@@ -473,6 +560,7 @@ const getAllCategoriesStats = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error fetching statistics',
+      error: error.message,
     });
   }
 };
@@ -482,6 +570,8 @@ const getAllCategoriesStats = async (req, res) => {
 // @access  Private/Admin
 const reorderCategories = async (req, res) => {
   try {
+    console.log('📋 Reorder categories request:', { body: req.body });
+
     const { categories } = req.body; // Array of { id, order }
 
     if (!Array.isArray(categories)) {
@@ -498,6 +588,8 @@ const reorderCategories = async (req, res) => {
 
     await Promise.all(updatePromises);
 
+    console.log('✅ Categories reordered:', { count: categories.length });
+
     res.json({
       success: true,
       message: 'Categories reordered successfully',
@@ -507,6 +599,7 @@ const reorderCategories = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error reordering categories',
+      error: error.message,
     });
   }
 };
