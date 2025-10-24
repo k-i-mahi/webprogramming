@@ -114,7 +114,7 @@ export const AuthProvider = ({ children }) => {
       return { success: true, user };
     } catch (err) {
       const errorMessage = err.response?.data?.message || 'Login failed';
-      setError(errorMessage);
+      setError(errorMessage); // Properly set the error message
       throw new Error(errorMessage);
     } finally {
       setLoading(false);

@@ -163,16 +163,20 @@ export const IssueProvider = ({ children }) => {
       try {
         const response = await issueService.voteOnIssue(id, voteType);
 
-        // Update issue in the list with new vote stats
+        console.log('🗳️ Vote response in context:', response);
+
+        // Update issue in the list with new vote data
         setIssues((prev) =>
           prev.map((issue) => {
             if (issue._id === id) {
-              return {
+              // Backend returns the full issue with updated votes
+              return response.data.issue || {
                 ...issue,
+                votes: response.data.votes || response.data,
                 stats: {
                   ...issue.stats,
-                  upvotes: response.data.upvotes,
-                  downvotes: response.data.downvotes,
+                  upvotes: response.data.upvotes || response.data.votes?.upvotes?.length || 0,
+                  downvotes: response.data.downvotes || response.data.votes?.downvotes?.length || 0,
                 },
               };
             }
@@ -184,18 +188,20 @@ export const IssueProvider = ({ children }) => {
         if (currentIssue?._id === id) {
           setCurrentIssue((prev) => ({
             ...prev,
+            votes: response.data.votes || response.data,
             stats: {
               ...prev.stats,
-              upvotes: response.data.upvotes,
-              downvotes: response.data.downvotes,
+              upvotes: response.data.upvotes || response.data.votes?.upvotes?.length || 0,
+              downvotes: response.data.downvotes || response.data.votes?.downvotes?.length || 0,
             },
           }));
         }
 
         return response.data;
       } catch (err) {
-        const errorMessage = err.response?.data?.message || 'Failed to vote';
+        const errorMessage = err.response?.data?.message || err.message || 'Failed to vote';
         setError(errorMessage);
+        console.error('❌ Vote error in context:', err);
         throw err;
       }
     },
@@ -208,21 +214,22 @@ export const IssueProvider = ({ children }) => {
       try {
         const response = await issueService.toggleFollow(id);
 
-        // Refresh the current issue data
+        console.log('👁️ Toggle follow response in context:', response);
+
+        // Refresh the current issue data to get accurate follower info
         if (currentIssue?._id === id) {
           const refreshed = await issueService.getIssueById(id);
           setCurrentIssue(refreshed.data);
         }
 
-        // Update issues list
+        // Update issues list - refetch to ensure accuracy
         setIssues((prev) =>
           prev.map((issue) => {
             if (issue._id === id) {
-              return {
+              // Backend returns the full issue with updated followers
+              return response.data.issue || {
                 ...issue,
-                followers: response.data.isFollowing
-                  ? [...(issue.followers || [])]
-                  : (issue.followers || []).filter(() => true), // Let backend handle the actual update
+                followers: response.data.followers || issue.followers,
               };
             }
             return issue;
@@ -232,8 +239,9 @@ export const IssueProvider = ({ children }) => {
         return response.data;
       } catch (err) {
         const errorMessage =
-          err.response?.data?.message || 'Failed to toggle follow';
+          err.response?.data?.message || err.message || 'Failed to toggle follow';
         setError(errorMessage);
+        console.error('❌ Toggle follow error in context:', err);
         throw err;
       }
     },

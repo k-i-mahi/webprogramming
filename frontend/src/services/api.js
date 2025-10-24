@@ -51,6 +51,11 @@ api.interceptors.response.use(
         {
           status: response.status,
           data: response.data,
+          dataStructure: {
+            hasData: !!response.data.data,
+            hasPagination: !!response.data.pagination,
+            dataType: Array.isArray(response.data.data) ? 'array' : typeof response.data.data
+          }
         },
       );
     }

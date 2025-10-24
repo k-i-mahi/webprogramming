@@ -2,6 +2,7 @@ const express = require('express');
 const { query, param } = require('express-validator');
 const { protect } = require('../middleware/auth');
 const { validate } = require('../middleware/requestHandler');
+const asyncHandler = require('express-async-handler'); // Ensure this line is present
 const {
   getNotifications,
   markAsRead,

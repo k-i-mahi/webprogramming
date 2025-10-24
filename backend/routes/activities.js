@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const asyncHandler = require('express-async-handler'); // Ensure this line is present
+const asyncHandler = require('express-async-handler'); // Add this line
 const { protect, authorize } = require('../middleware/auth');
 const { validate } = require('../middleware/requestHandler');
 const { query, param } = require('express-validator');

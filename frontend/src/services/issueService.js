@@ -14,7 +14,11 @@ const issueService = {
   getIssues: async (params = {}) => {
     try {
       const response = await api.get(API_ENDPOINTS.ISSUES.LIST, { params });
-      return response.data;
+      // Backend returns { success, data: [...], pagination }
+      return {
+        data: response.data.data || response.data,
+        pagination: response.data.pagination
+      };
     } catch (error) {
       console.error('Get issues error:', error);
       throw error;
@@ -29,7 +33,10 @@ const issueService = {
   getIssueById: async (id) => {
     try {
       const response = await api.get(API_ENDPOINTS.ISSUES.DETAIL(id));
-      return response.data;
+      // Backend returns { success, data: {...} }
+      return {
+        data: response.data.data || response.data
+      };
     } catch (error) {
       console.error('Get issue by ID error:', error);
       throw error;
@@ -50,10 +57,14 @@ const issueService = {
           data,
           onProgress,
         );
-        return response.data;
+        return {
+          data: response.data.data || response.data
+        };
       }
       const response = await api.post(API_ENDPOINTS.ISSUES.CREATE, data);
-      return response.data;
+      return {
+        data: response.data.data || response.data
+      };
     } catch (error) {
       console.error('Create issue error:', error);
       throw error;
@@ -76,10 +87,14 @@ const issueService = {
           onProgress,
           'PUT',
         );
-        return response.data;
+        return {
+          data: response.data.data || response.data
+        };
       }
       const response = await api.put(API_ENDPOINTS.ISSUES.UPDATE(id), data);
-      return response.data;
+      return {
+        data: response.data.data || response.data
+      };
     } catch (error) {
       console.error('Update issue error:', error);
       throw error;
@@ -94,7 +109,9 @@ const issueService = {
   deleteIssue: async (id) => {
     try {
       const response = await api.delete(API_ENDPOINTS.ISSUES.DELETE(id));
-      return response.data;
+      return {
+        data: response.data.data || response.data
+      };
     } catch (error) {
       console.error('Delete issue error:', error);
       throw error;
@@ -116,7 +133,9 @@ const issueService = {
       const response = await api.get(API_ENDPOINTS.ISSUES.COMMENTS(id), {
         params,
       });
-      return response.data;
+      return {
+        data: response.data.data || response.data
+      };
     } catch (error) {
       console.error('Get comments error:', error);
       throw error;
@@ -136,7 +155,9 @@ const issueService = {
         commentText,
         isInternal,
       });
-      return response.data;
+      return {
+        data: response.data.data || response.data
+      };
     } catch (error) {
       console.error('Add comment error:', error);
       throw error;
@@ -196,7 +217,9 @@ const issueService = {
       const response = await api.post(API_ENDPOINTS.ISSUES.VOTE(id), {
         voteType,
       });
-      return response.data;
+      return {
+        data: response.data.data || response.data
+      };
     } catch (error) {
       console.error('Vote on issue error:', error);
       throw error;
@@ -284,7 +307,9 @@ const issueService = {
   toggleFollow: async (id) => {
     try {
       const response = await api.post(API_ENDPOINTS.ISSUES.FOLLOW(id));
-      return response.data;
+      return {
+        data: response.data.data || response.data
+      };
     } catch (error) {
       console.error('Toggle follow error:', error);
       throw error;
@@ -648,7 +673,9 @@ const issueService = {
   getIssueStats: async () => {
     try {
       const response = await api.get(API_ENDPOINTS.ISSUES.STATS);
-      return response.data;
+      return {
+        data: response.data.data || response.data
+      };
     } catch (error) {
       console.error('Get issue stats error:', error);
       throw error;

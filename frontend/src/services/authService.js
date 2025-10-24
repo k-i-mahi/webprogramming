@@ -40,7 +40,10 @@ const authService = {
    */
   login: async (credentials) => {
     try {
-      const response = await api.post(API_ENDPOINTS.AUTH.LOGIN, credentials);
+      const response = await api.post(API_ENDPOINTS.AUTH.LOGIN, {
+        email: credentials.email,
+        password: credentials.password,
+      });
 
       // Store token and user data
       if (response.data.success && response.data.token) {

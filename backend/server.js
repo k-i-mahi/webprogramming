@@ -383,6 +383,3 @@ startServer();
 
 // Export for testing
 module.exports = app;
-
-const authRoutes = require('./routes/auth');
-app.use('/api/auth', authRoutes);

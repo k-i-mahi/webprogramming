@@ -54,17 +54,34 @@ const IssueList = () => {
         ...filters,
       };
 
+      // Remove empty filter values
+      Object.keys(params).forEach(key => {
+        if (params[key] === '' || params[key] === null || params[key] === undefined) {
+          delete params[key];
+        }
+      });
+
+      console.log('📋 Loading issues with params:', params);
+
       const response = await issueService.getIssues(params);
+      
+      console.log('📋 Issues response:', {
+        dataLength: response.data?.length,
+        pagination: response.pagination,
+        firstIssue: response.data?.[0]
+      });
 
       setIssues(response.data || []);
       setPagination((prev) => ({
         ...prev,
         total: response.pagination?.total || 0,
         totalPages: response.pagination?.totalPages || 0,
+        page: response.pagination?.page || prev.page,
       }));
     } catch (error) {
-      console.error('Load issues error:', error);
-      showError('Failed to load issues');
+      console.error('❌ Load issues error:', error);
+      showError(error.message || 'Failed to load issues');
+      setIssues([]);
     } finally {
       setLoading(false);
     }
@@ -106,7 +123,9 @@ const IssueList = () => {
         const response = await issueService.getIssueById(selectedIssue._id);
         setSelectedIssue(response.data);
       } catch (error) {
-        console.error('Failed to reload issue:', error);
+        console.error('❌ Failed to reload issue:', error);
+        setShowIssueModal(false);
+        setSelectedIssue(null);
       }
     }
   };

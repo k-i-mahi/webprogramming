@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -30,16 +30,22 @@ const IssueDetail = () => {
   const [newStatus, setNewStatus] = useState('');
   const [statusReason, setStatusReason] = useState('');
 
-  useEffect(() => {
-    loadIssueDetails();
-  }, [id]);
-
-  const loadIssueDetails = async () => {
+  const loadIssueDetails = useCallback(async () => {
     try {
       setLoading(true);
 
+      console.log('📋 Loading issue details for ID:', id);
+
       const response = await issueService.getIssueById(id);
       const issueData = response.data;
+      
+      console.log('✅ Issue loaded:', {
+        id: issueData._id,
+        title: issueData.title,
+        hasVotes: !!issueData.votes,
+        hasFollowers: !!issueData.followers,
+        hasComments: !!issueData.comments
+      });
       
       setIssue(issueData);
       
@@ -51,6 +57,7 @@ const IssueDetail = () => {
             return fId?.toString() === user._id?.toString();
           }
         );
+        console.log('👁️ User following status:', isUserFollowing);
         setIsFollowing(isUserFollowing);
       }
 
@@ -69,18 +76,24 @@ const IssueDetail = () => {
           }
         );
         
-        setVoteStatus({
+        const voteState = {
           voted: hasUpvoted || hasDownvoted,
           voteType: hasUpvoted ? 'upvote' : hasDownvoted ? 'downvote' : null,
-        });
+        };
+        console.log('🗳️ User vote status:', voteState);
+        setVoteStatus(voteState);
       }
     } catch (error) {
-      console.error('Load issue error:', error);
-      showError('Failed to load issue details');
+      console.error('❌ Load issue error:', error);
+      showError(error.message || 'Failed to load issue details');
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, user, showError]);
+
+  useEffect(() => {
+    loadIssueDetails();
+  }, [loadIssueDetails]);
 
   const handleVote = async (voteType) => {
     if (!user) {
@@ -89,11 +102,13 @@ const IssueDetail = () => {
     }
 
     try {
+      console.log('🗳️ Voting:', voteType);
       await issueService.voteOnIssue(id, voteType);
       await loadIssueDetails();
       success('Vote recorded');
     } catch (error) {
-      showError('Failed to vote');
+      console.error('❌ Vote error:', error);
+      showError(error.message || 'Failed to vote');
     }
   };
 
@@ -104,12 +119,16 @@ const IssueDetail = () => {
     }
 
     try {
+      console.log('👁️ Toggling follow');
       await issueService.toggleFollow(id);
       setIsFollowing(!isFollowing);
       success(isFollowing ? 'Unfollowed issue' : 'Following issue');
       await loadIssueDetails();
     } catch (error) {
-      showError('Failed to update follow status');
+      console.error('❌ Toggle follow error:', error);
+      showError(error.message || 'Failed to update follow status');
+      // Revert optimistic update
+      setIsFollowing(isFollowing);
     }
   };
 
@@ -125,12 +144,14 @@ const IssueDetail = () => {
 
     try {
       setIsCommenting(true);
+      console.log('💬 Adding comment');
       await issueService.addComment(id, commentText.trim());
       setCommentText('');
       await loadIssueDetails();
       success('Comment added');
     } catch (error) {
-      showError('Failed to add comment');
+      console.error('❌ Add comment error:', error);
+      showError(error.message || 'Failed to add comment');
     } finally {
       setIsCommenting(false);
     }
