@@ -1,8 +1,9 @@
 {
   "name": "civita-frontend",
   "version": "1.0.0",
-  "description": "Frontend for Civita MERN application",
   "private": true,
+  "proxy": "http://localhost:5000",
+
   "dependencies": {
     "@testing-library/jest-dom": "^5.17.0",
     "@testing-library/react": "^13.4.0",
@@ -39,6 +40,5 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
-  },
-  "proxy": "http://localhost:5000"
+  }
 }

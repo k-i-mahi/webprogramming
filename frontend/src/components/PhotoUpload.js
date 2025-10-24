@@ -1,192 +1,248 @@
 import React, { useState, useRef } from 'react';
+import './PhotoUpload.css';
 
-const PhotoUpload = ({ 
-  onPhotoChange, 
-  existingPhoto = null,
-  maxSize = 5 * 1024 * 1024, // 5MB
-  acceptedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']
+const PhotoUpload = ({
+  onPhotosChange,
+  maxFiles = 5,
+  maxSize = 5, // MB
+  existingPhotos = [],
+  disabled = false,
 }) => {
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [preview, setPreview] = useState(existingPhoto || null);
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [previewUrls, setPreviewUrls] = useState([]);
   const [error, setError] = useState('');
-  const [isDragOver, setIsDragOver] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
 
-  const validateFile = (file) => {
-    if (!acceptedTypes.includes(file.type)) {
-      setError('Please select a valid image file (JPEG, PNG, WebP, or GIF)');
-      return false;
-    }
-
-    if (file.size > maxSize) {
-      setError(`File size must be less than ${Math.round(maxSize / 1024 / 1024)}MB`);
-      return false;
-    }
-
-    setError('');
-    return true;
-  };
-
-  const handleFileSelect = (file) => {
-    if (!file) return;
-
-    if (validateFile(file)) {
-      setSelectedFile(file);
-      
-      // Create preview
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setPreview(e.target.result);
-      };
-      reader.readAsDataURL(file);
-      
-      onPhotoChange && onPhotoChange(file);
-    }
-  };
-
-  const handleFileInputChange = (e) => {
-    const file = e.target.files[0];
-    handleFileSelect(file);
+  const handleFileSelect = (e) => {
+    const files = Array.from(e.target.files);
+    processFiles(files);
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
-    setIsDragOver(false);
-    
-    const file = e.dataTransfer.files[0];
-    handleFileSelect(file);
+    e.stopPropagation();
+    setIsDragging(false);
+
+    if (disabled) return;
+
+    const files = Array.from(e.dataTransfer.files);
+    processFiles(files);
   };
 
   const handleDragOver = (e) => {
     e.preventDefault();
-    setIsDragOver(true);
+    e.stopPropagation();
+    if (!disabled) {
+      setIsDragging(true);
+    }
   };
 
   const handleDragLeave = (e) => {
     e.preventDefault();
-    setIsDragOver(false);
+    e.stopPropagation();
+    setIsDragging(false);
   };
 
-  const removePhoto = () => {
-    setSelectedFile(null);
-    setPreview(null);
+  const processFiles = (files) => {
     setError('');
-    onPhotoChange && onPhotoChange(null);
-    
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+
+    // Filter only image files
+    const imageFiles = files.filter((file) => {
+      if (!file.type.startsWith('image/')) {
+        setError('Only image files are allowed');
+        return false;
+      }
+      return true;
+    });
+
+    if (imageFiles.length === 0) return;
+
+    // Check total file count
+    const totalFiles =
+      selectedFiles.length + imageFiles.length + existingPhotos.length;
+    if (totalFiles > maxFiles) {
+      setError(`Maximum ${maxFiles} photos allowed`);
+      return;
+    }
+
+    // Validate file sizes
+    const oversizedFiles = imageFiles.filter(
+      (file) => file.size > maxSize * 1024 * 1024,
+    );
+    if (oversizedFiles.length > 0) {
+      setError(`File size must be less than ${maxSize}MB`);
+      return;
+    }
+
+    // Create preview URLs
+    const newPreviewUrls = imageFiles.map((file) => URL.createObjectURL(file));
+
+    // Update state
+    const updatedFiles = [...selectedFiles, ...imageFiles];
+    const updatedPreviews = [...previewUrls, ...newPreviewUrls];
+
+    setSelectedFiles(updatedFiles);
+    setPreviewUrls(updatedPreviews);
+
+    // Notify parent
+    if (onPhotosChange) {
+      onPhotosChange(updatedFiles);
     }
   };
 
-  const triggerFileInput = () => {
-    fileInputRef.current?.click();
+  const removeFile = (index) => {
+    const updatedFiles = selectedFiles.filter((_, i) => i !== index);
+    const updatedPreviews = previewUrls.filter((_, i) => i !== index);
+
+    // Revoke URL to prevent memory leaks
+    URL.revokeObjectURL(previewUrls[index]);
+
+    setSelectedFiles(updatedFiles);
+    setPreviewUrls(updatedPreviews);
+
+    // Notify parent
+    if (onPhotosChange) {
+      onPhotosChange(updatedFiles);
+    }
+
+    setError('');
+  };
+
+  const removeExistingPhoto = (index) => {
+    // This would need to be handled by parent component
+    // as it involves server-side deletion
+    console.log('Remove existing photo:', index);
+  };
+
+  const openFilePicker = () => {
+    if (!disabled) {
+      fileInputRef.current?.click();
+    }
+  };
+
+  const getTotalPhotos = () => {
+    return selectedFiles.length + existingPhotos.length;
+  };
+
+  const getRemainingSlots = () => {
+    return maxFiles - getTotalPhotos();
   };
 
   return (
-    <div style={{ marginBottom: '1rem' }}>
-      <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
-        Photo (Optional)
-      </label>
-      
-      <div
-        style={{
-          border: `2px dashed ${isDragOver ? '#007bff' : '#dee2e6'}`,
-          borderRadius: '8px',
-          padding: '1rem',
-          textAlign: 'center',
-          backgroundColor: isDragOver ? '#f8f9fa' : '#fff',
-          cursor: 'pointer',
-          transition: 'all 0.2s ease'
-        }}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onClick={triggerFileInput}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={acceptedTypes.join(',')}
-          onChange={handleFileInputChange}
-          style={{ display: 'none' }}
-        />
-        
-        {preview ? (
-          <div>
-            <img
-              src={preview}
-              alt="Preview"
-              style={{
-                maxWidth: '100%',
-                maxHeight: '200px',
-                objectFit: 'cover',
-                borderRadius: '4px',
-                marginBottom: '0.5rem'
-              }}
-            />
-            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  triggerFileInput();
-                }}
-                className="btn btn-secondary"
-                style={{ fontSize: '0.8rem' }}
-              >
-                Change Photo
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  removePhoto();
-                }}
-                className="btn btn-danger"
-                style={{ fontSize: '0.8rem' }}
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div>
-            <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📷</div>
-            <p style={{ margin: '0 0 0.5rem 0', color: '#666' }}>
-              {isDragOver ? 'Drop your photo here' : 'Click to upload or drag and drop'}
-            </p>
-            <p style={{ margin: 0, fontSize: '0.8rem', color: '#999' }}>
-              PNG, JPG, WebP, GIF up to {Math.round(maxSize / 1024 / 1024)}MB
-            </p>
-          </div>
+    <div className="photo-upload">
+      <div className="upload-header">
+        <label className="upload-label">
+          Photos ({getTotalPhotos()}/{maxFiles})
+        </label>
+        {getRemainingSlots() > 0 && (
+          <span className="remaining-info">
+            {getRemainingSlots()} more photo
+            {getRemainingSlots() !== 1 ? 's' : ''} allowed
+          </span>
         )}
       </div>
 
+      {/* Error Message */}
       {error && (
-        <div style={{ 
-          color: '#dc3545', 
-          fontSize: '0.8rem', 
-          marginTop: '0.5rem',
-          padding: '0.5rem',
-          backgroundColor: '#f8d7da',
-          border: '1px solid #f5c6cb',
-          borderRadius: '4px'
-        }}>
-          {error}
+        <div className="upload-error">
+          <span className="error-icon">⚠</span>
+          <span>{error}</span>
         </div>
       )}
 
-      {selectedFile && (
-        <div style={{ 
-          color: '#28a745', 
-          fontSize: '0.8rem', 
-          marginTop: '0.5rem',
-          padding: '0.5rem',
-          backgroundColor: '#d4edda',
-          border: '1px solid #c3e6cb',
-          borderRadius: '4px'
-        }}>
-          ✅ Photo selected: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)}MB)
+      {/* Existing Photos */}
+      {existingPhotos.length > 0 && (
+        <div className="existing-photos">
+          <div className="photos-grid">
+            {existingPhotos.map((photo, index) => (
+              <div key={`existing-${index}`} className="photo-preview">
+                <img src={photo.url} alt={`Photo ${index + 1}`} />
+                <button
+                  type="button"
+                  className="photo-remove"
+                  onClick={() => removeExistingPhoto(index)}
+                  disabled={disabled}
+                >
+                  ✕
+                </button>
+                <span className="photo-badge">Uploaded</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* New Photo Previews */}
+      {previewUrls.length > 0 && (
+        <div className="preview-section">
+          <div className="photos-grid">
+            {previewUrls.map((url, index) => (
+              <div key={`preview-${index}`} className="photo-preview">
+                <img src={url} alt={`Preview ${index + 1}`} />
+                <button
+                  type="button"
+                  className="photo-remove"
+                  onClick={() => removeFile(index)}
+                  disabled={disabled}
+                >
+                  ✕
+                </button>
+                <div className="photo-info">
+                  {selectedFiles[index] && (
+                    <span className="photo-size">
+                      {(selectedFiles[index].size / 1024 / 1024).toFixed(2)}MB
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Upload Area */}
+      {getRemainingSlots() > 0 && (
+        <div
+          className={`upload-area ${isDragging ? 'dragging' : ''} ${
+            disabled ? 'disabled' : ''
+          }`}
+          onClick={openFilePicker}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleFileSelect}
+            disabled={disabled}
+            className="file-input"
+          />
+
+          <div className="upload-content">
+            <div className="upload-icon">📷</div>
+            <div className="upload-text">
+              <p className="upload-primary">
+                {isDragging
+                  ? 'Drop photos here'
+                  : 'Click to upload or drag and drop'}
+              </p>
+              <p className="upload-secondary">
+                PNG, JPG, GIF, WebP (max {maxSize}MB each)
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Info Text */}
+      {getTotalPhotos() === 0 && (
+        <div className="upload-hint">
+          <span className="hint-icon">💡</span>
+          <span>Adding photos helps resolve issues faster</span>
         </div>
       )}
     </div>

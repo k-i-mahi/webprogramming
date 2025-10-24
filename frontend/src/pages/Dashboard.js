@@ -1,200 +1,413 @@
 import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import issueService from '../services/issueService';
 import categoryService from '../services/categoryService';
+import authService from '../services/authService';
+import Card from '../components/Card';
+import Badge from '../components/Badge';
+import Feedback from '../components/Feedback';
+import IssueDetailModal from '../components/IssueDetailModal';
+import './Dashboard.css';
 
 const Dashboard = () => {
   const { user } = useAuth();
+  const { success, error: showError } = useToast();
+  const navigate = useNavigate();
+
+  const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalIssues: 0,
     myIssues: 0,
-    assignedIssues: 0,
-    recentIssues: []
+    resolved: 0,
+    inProgress: 0,
+    open: 0,
   });
-  const [loading, setLoading] = useState(true);
+  const [recentIssues, setRecentIssues] = useState([]);
+  const [myIssues, setMyIssues] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [selectedIssue, setSelectedIssue] = useState(null);
+  const [showIssueModal, setShowIssueModal] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
-  }, []);
+  }, [user]);
 
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      
-      // Load recent issues
-      const issuesResponse = await issueService.getIssues({ limit: 5 });
-      const recentIssues = issuesResponse.data.issues || [];
 
-      // Calculate stats based on user role
-      let totalIssues = 0;
-      let myIssues = 0;
-      let assignedIssues = 0;
-
-      if (user?.role === 'resident') {
-        myIssues = recentIssues.filter(issue => issue.createdBy?._id === user.id).length;
-        totalIssues = myIssues;
-      } else if (user?.role === 'authority') {
-        totalIssues = recentIssues.length;
-        assignedIssues = recentIssues.filter(issue => issue.assignedTo?._id === user.id).length;
-      } else if (user?.role === 'admin') {
-        totalIssues = recentIssues.length;
-        myIssues = recentIssues.filter(issue => issue.createdBy?._id === user.id).length;
-        assignedIssues = recentIssues.filter(issue => issue.assignedTo?._id === user.id).length;
-      }
-
+      // Load user stats
+      const statsResponse = await authService.getUserStats();
       setStats({
-        totalIssues,
-        myIssues,
-        assignedIssues,
-        recentIssues
+        totalIssues: statsResponse.data.issues.totalReported || 0,
+        myIssues: statsResponse.data.issues.totalReported || 0,
+        resolved: statsResponse.data.issues.resolved || 0,
+        inProgress: statsResponse.data.issues.inProgress || 0,
+        open: statsResponse.data.issues.open || 0,
       });
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
+
+      // Load recent issues (all)
+      const recentResponse = await issueService.getIssues({
+        limit: 6,
+        sort: '-createdAt',
+      });
+      setRecentIssues(recentResponse.data || []);
+
+      // Load my issues
+      const myIssuesResponse = await issueService.getIssues({
+        reportedBy: user._id,
+        limit: 5,
+        sort: '-createdAt',
+      });
+      setMyIssues(myIssuesResponse.data || []);
+
+      // Load categories
+      const categoriesResponse = await categoryService.getCategories({
+        limit: 8,
+      });
+      setCategories(categoriesResponse.data || []);
+    } catch (err) {
+      console.error('Load dashboard error:', err);
+      showError('Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
   };
 
-  const getRoleBasedContent = () => {
-    switch (user?.role) {
-      case 'resident':
-        return (
-          <div>
-            <h3>Your Issues</h3>
-            <p>You have {stats.myIssues} issue(s) reported.</p>
-            <div style={{ marginTop: '2rem' }}>
-              <h4>Quick Actions</h4>
-              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                <a href="/issues" className="btn btn-primary">Report New Issue</a>
-                <a href="/issues" className="btn btn-secondary">View My Issues</a>
-              </div>
-            </div>
-          </div>
-        );
-      
-      case 'authority':
-        return (
-          <div>
-            <h3>Authority Dashboard</h3>
-            <p>You have {stats.assignedIssues} issue(s) assigned to you.</p>
-            <p>Total issues in your categories: {stats.totalIssues}</p>
-            <div style={{ marginTop: '2rem' }}>
-              <h4>Quick Actions</h4>
-              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                <a href="/issues" className="btn btn-primary">View All Issues</a>
-                <a href="/issues" className="btn btn-secondary">My Assigned Issues</a>
-              </div>
-            </div>
-          </div>
-        );
-      
-      case 'admin':
-        return (
-          <div>
-            <h3>Admin Dashboard</h3>
-            <p>Total issues in system: {stats.totalIssues}</p>
-            <p>Issues you created: {stats.myIssues}</p>
-            <p>Issues assigned to you: {stats.assignedIssues}</p>
-            <div style={{ marginTop: '2rem' }}>
-              <h4>Quick Actions</h4>
-              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                <a href="/issues" className="btn btn-primary">Manage Issues</a>
-                <a href="/categories" className="btn btn-secondary">Manage Categories</a>
-                <a href="/users" className="btn btn-secondary">Manage Users</a>
-              </div>
-            </div>
-          </div>
-        );
-      
-      default:
-        return <p>Welcome to Civita!</p>;
-    }
+  const handleIssueClick = (issue) => {
+    setSelectedIssue(issue);
+    setShowIssueModal(true);
+  };
+
+  const getTimeAgo = (date) => {
+    const seconds = Math.floor((new Date() - new Date(date)) / 1000);
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+    return new Date(date).toLocaleDateString();
+  };
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 18) return 'Good Afternoon';
+    return 'Good Evening';
   };
 
   if (loading) {
     return (
-      <div className="container">
-        <div className="card text-center">
-          <h2>Loading dashboard...</h2>
-        </div>
+      <div className="dashboard-page">
+        <Feedback type="loading" fullPage={true} />
       </div>
     );
   }
 
   return (
-    <div className="container">
-      <div className="card">
-        <h1>Dashboard</h1>
-        <p>Welcome to your dashboard, {user?.name}!</p>
-        
-        <div style={{ marginTop: '2rem' }}>
-          <h3>User Information</h3>
-          <div style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '5px' }}>
-            <p><strong>Name:</strong> {user?.name}</p>
-            <p><strong>Email:</strong> {user?.email}</p>
-            <p><strong>Role:</strong> 
-              <span style={{ 
-                padding: '0.25rem 0.5rem', 
-                borderRadius: '4px', 
-                backgroundColor: user?.role === 'admin' ? '#dc3545' : user?.role === 'authority' ? '#17a2b8' : '#28a745',
-                color: 'white',
-                fontSize: '0.8rem',
-                marginLeft: '0.5rem'
-              }}>
-                {user?.role?.toUpperCase()}
-              </span>
+    <div className="dashboard-page">
+      <div className="dashboard-container">
+        {/* Welcome Section */}
+        <div className="welcome-section">
+          <div className="welcome-content">
+            <h1 className="welcome-title">
+              {getGreeting()}, {user.name}! 👋
+            </h1>
+            <p className="welcome-subtitle">
+              Welcome back to your dashboard. Here's what's happening in your
+              community.
             </p>
-            {user?.location && (
-              <>
-                <p><strong>Location:</strong> {user.location.latitude}, {user.location.longitude}</p>
-                <p><strong>Coordinates:</strong> 
-                  <a 
-                    href={`https://www.google.com/maps?q=${user.location.latitude},${user.location.longitude}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ marginLeft: '0.5rem', color: '#007bff' }}
-                  >
-                    View on Map
-                  </a>
-                </p>
-              </>
-            )}
+          </div>
+          <Link to="/issues/new" className="btn btn-primary btn-large">
+            <span className="btn-icon">➕</span>
+            <span>Report New Issue</span>
+          </Link>
+        </div>
+
+        {/* Quick Stats */}
+        <div className="stats-grid">
+          <Card className="stat-card" hover={false} padding="large">
+            <div className="stat-icon stat-icon-primary">📊</div>
+            <div className="stat-content">
+              <div className="stat-value">{stats.totalIssues}</div>
+              <div className="stat-label">Total Issues</div>
+            </div>
+          </Card>
+
+          <Card className="stat-card" hover={false} padding="large">
+            <div className="stat-icon stat-icon-warning">⚙️</div>
+            <div className="stat-content">
+              <div className="stat-value">{stats.inProgress}</div>
+              <div className="stat-label">In Progress</div>
+            </div>
+          </Card>
+
+          <Card className="stat-card" hover={false} padding="large">
+            <div className="stat-icon stat-icon-success">✅</div>
+            <div className="stat-content">
+              <div className="stat-value">{stats.resolved}</div>
+              <div className="stat-label">Resolved</div>
+            </div>
+          </Card>
+
+          <Card className="stat-card" hover={false} padding="large">
+            <div className="stat-icon stat-icon-info">🔓</div>
+            <div className="stat-content">
+              <div className="stat-value">{stats.open}</div>
+              <div className="stat-label">Open Issues</div>
+            </div>
+          </Card>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="quick-actions-section">
+          <h2 className="section-title">Quick Actions</h2>
+          <div className="quick-actions-grid">
+            <Card
+              className="action-card"
+              onClick={() => navigate('/issues')}
+              hover={true}
+            >
+              <div className="action-icon">📋</div>
+              <h3 className="action-title">Browse Issues</h3>
+              <p className="action-description">
+                View and track community issues
+              </p>
+            </Card>
+
+            <Card
+              className="action-card"
+              onClick={() => navigate('/map')}
+              hover={true}
+            >
+              <div className="action-icon">🗺️</div>
+              <h3 className="action-title">Map View</h3>
+              <p className="action-description">
+                See issues on interactive map
+              </p>
+            </Card>
+
+            <Card
+              className="action-card"
+              onClick={() => navigate('/issues/new')}
+              hover={true}
+            >
+              <div className="action-icon">➕</div>
+              <h3 className="action-title">Report Issue</h3>
+              <p className="action-description">Submit a new community issue</p>
+            </Card>
+
+            <Card
+              className="action-card"
+              onClick={() => navigate('/profile')}
+              hover={true}
+            >
+              <div className="action-icon">👤</div>
+              <h3 className="action-title">My Profile</h3>
+              <p className="action-description">View and edit your profile</p>
+            </Card>
           </div>
         </div>
 
-        {getRoleBasedContent()}
+        {/* My Issues */}
+        {myIssues.length > 0 && (
+          <div className="my-issues-section">
+            <div className="section-header">
+              <h2 className="section-title">My Recent Issues</h2>
+              <Link to="/my-issues" className="section-link">
+                View All →
+              </Link>
+            </div>
+            <div className="issues-list">
+              {myIssues.map((issue) => (
+                <Card
+                  key={issue._id}
+                  className="issue-list-item"
+                  onClick={() => handleIssueClick(issue)}
+                  hover={true}
+                  padding="medium"
+                >
+                  <div className="issue-item-content">
+                    <div className="issue-item-header">
+                      <h3 className="issue-item-title">{issue.title}</h3>
+                      <div className="issue-item-badges">
+                        <Badge
+                          type="status"
+                          value={issue.status}
+                          size="small"
+                        />
+                        <Badge
+                          type="priority"
+                          value={issue.priority}
+                          size="small"
+                        />
+                      </div>
+                    </div>
 
-        {stats.recentIssues.length > 0 && (
-          <div style={{ marginTop: '2rem' }}>
-            <h3>Recent Issues</h3>
-            <div style={{ display: 'grid', gap: '1rem' }}>
-              {stats.recentIssues.slice(0, 3).map(issue => (
-                <div key={issue._id} className="card" style={{ padding: '1rem' }}>
-                  <h4 style={{ margin: '0 0 0.5rem 0' }}>{issue.title}</h4>
-                  <p style={{ color: '#666', margin: '0 0 0.5rem 0' }}>{issue.description}</p>
-                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                    <span style={{ 
-                      padding: '0.25rem 0.5rem', 
-                      borderRadius: '4px', 
-                      backgroundColor: issue.status === 'Reported' ? '#ffc107' : issue.status === 'In Progress' ? '#17a2b8' : '#28a745',
-                      color: 'white',
-                      fontSize: '0.8rem'
-                    }}>
-                      {issue.status}
-                    </span>
-                    <span style={{ fontSize: '0.9rem', color: '#666' }}>
-                      {issue.category?.name}
-                    </span>
-                    <span style={{ fontSize: '0.9rem', color: '#666' }}>
-                      {new Date(issue.createdAt).toLocaleDateString()}
-                    </span>
+                    <p className="issue-item-description">
+                      {issue.description.substring(0, 100)}
+                      {issue.description.length > 100 ? '...' : ''}
+                    </p>
+
+                    <div className="issue-item-footer">
+                      <div className="issue-item-meta">
+                        <span className="meta-item">
+                          {issue.category?.icon} {issue.category?.displayName}
+                        </span>
+                      </div>
+                      <span className="issue-item-time">
+                        {getTimeAgo(issue.createdAt)}
+                      </span>
+                    </div>
                   </div>
-                </div>
+                </Card>
               ))}
             </div>
           </div>
         )}
+
+        {/* Categories */}
+        {categories.length > 0 && (
+          <div className="categories-section">
+            <div className="section-header">
+              <h2 className="section-title">Browse by Category</h2>
+              <Link to="/categories" className="section-link">
+                View All →
+              </Link>
+            </div>
+            <div className="categories-grid">
+              {categories.slice(0, 8).map((category) => (
+                <Card
+                  key={category._id}
+                  className="category-card-small"
+                  onClick={() => navigate(`/issues?category=${category._id}`)}
+                  hover={true}
+                  padding="medium"
+                >
+                  <div
+                    className="category-icon-small"
+                    style={{ background: category.color }}
+                  >
+                    {category.icon}
+                  </div>
+                  <div className="category-info">
+                    <h3 className="category-name-small">
+                      {category.displayName}
+                    </h3>
+                    <p className="category-count-small">
+                      {category.metadata?.issueCount || 0} issues
+                    </p>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Recent Activity */}
+        <div className="recent-activity-section">
+          <div className="section-header">
+            <h2 className="section-title">Recent Community Issues</h2>
+            <Link to="/issues" className="section-link">
+              View All →
+            </Link>
+          </div>
+
+          {recentIssues.length === 0 ? (
+            <Feedback
+              type="empty"
+              title="No Issues Yet"
+              message="Be the first to report an issue in your community"
+              icon="📭"
+              action={() => navigate('/issues/new')}
+              actionText="Report Issue"
+            />
+          ) : (
+            <div className="issues-grid">
+              {recentIssues.map((issue) => (
+                <Card
+                  key={issue._id}
+                  image={issue.images?.[0]?.url}
+                  badge={issue.priority === 'urgent' ? '🚨 Urgent' : null}
+                  onClick={() => handleIssueClick(issue)}
+                  hover={true}
+                  padding="medium"
+                  header={
+                    <div className="issue-card-badges">
+                      <Badge type="status" value={issue.status} size="small" />
+                      <Badge
+                        type="priority"
+                        value={issue.priority}
+                        size="small"
+                      />
+                    </div>
+                  }
+                  footer={
+                    <div className="issue-card-footer">
+                      <div className="issue-stats">
+                        <span className="stat-item">
+                          👍 {issue.stats?.upvotes || 0}
+                        </span>
+                        <span className="stat-item">
+                          💬 {issue.stats?.commentCount || 0}
+                        </span>
+                        <span className="stat-item">
+                          👁 {issue.stats?.views || 0}
+                        </span>
+                      </div>
+                      <span className="issue-time">
+                        {getTimeAgo(issue.createdAt)}
+                      </span>
+                    </div>
+                  }
+                >
+                  <h3 className="issue-card-title">{issue.title}</h3>
+                  <p className="issue-card-description">
+                    {issue.description.substring(0, 100)}
+                    {issue.description.length > 100 ? '...' : ''}
+                  </p>
+                  <div className="issue-card-category">
+                    <span className="category-icon">
+                      {issue.category?.icon}
+                    </span>
+                    <span className="category-name">
+                      {issue.category?.displayName}
+                    </span>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Tips Section */}
+        <Card className="tips-card" padding="large">
+          <div className="tips-icon">💡</div>
+          <div className="tips-content">
+            <h3 className="tips-title">Pro Tips</h3>
+            <ul className="tips-list">
+              <li>Add photos to your issue reports for faster resolution</li>
+              <li>Use the map view to find issues near you</li>
+              <li>Follow issues to get updates on their progress</li>
+              <li>Vote on issues to show community support</li>
+            </ul>
+          </div>
+        </Card>
       </div>
+
+      {/* Issue Detail Modal */}
+      {showIssueModal && selectedIssue && (
+        <IssueDetailModal
+          issue={selectedIssue}
+          isOpen={showIssueModal}
+          onClose={() => {
+            setShowIssueModal(false);
+            setSelectedIssue(null);
+          }}
+          onUpdate={loadDashboardData}
+        />
+      )}
     </div>
   );
 };

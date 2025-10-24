@@ -1,265 +1,365 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
+import './IssueFilters.css';
 
-const IssueFilters = ({ 
-  categories = [], 
-  onFiltersChange, 
-  initialFilters = {} 
+const IssueFilters = ({
+  categories = [],
+  onFiltersChange,
+  initialFilters = {},
+  showUserFilters = true,
 }) => {
+  const { user } = useAuth();
+
   const [filters, setFilters] = useState({
     search: initialFilters.search || '',
     status: initialFilters.status || '',
     category: initialFilters.category || '',
     priority: initialFilters.priority || '',
     assignedTo: initialFilters.assignedTo || '',
+    reportedBy: initialFilters.reportedBy || '',
     dateRange: initialFilters.dateRange || '',
-    sortBy: initialFilters.sortBy || 'createdAt',
-    sortOrder: initialFilters.sortOrder || 'desc',
-    ...initialFilters
+    sortBy: initialFilters.sortBy || '-createdAt',
+    myIssues: initialFilters.myIssues || false,
+    following: initialFilters.following || false,
+    ...initialFilters,
   });
 
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [activeFilterCount, setActiveFilterCount] = useState(0);
 
   useEffect(() => {
+    // Count active filters
+    const count = Object.entries(filters).filter(([key, value]) => {
+      if (key === 'sortBy') return false; // Don't count sort
+      return value !== '' && value !== false;
+    }).length;
+
+    setActiveFilterCount(count);
+
     onFiltersChange && onFiltersChange(filters);
   }, [filters, onFiltersChange]);
 
   const handleFilterChange = (name, value) => {
-    setFilters(prev => ({
+    setFilters((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
+    }));
+  };
+
+  const handleSearchChange = (e) => {
+    const value = e.target.value;
+    setFilters((prev) => ({
+      ...prev,
+      search: value,
     }));
   };
 
   const clearFilters = () => {
-    const clearedFilters = {
+    setFilters({
       search: '',
       status: '',
       category: '',
       priority: '',
       assignedTo: '',
+      reportedBy: '',
       dateRange: '',
-      sortBy: 'createdAt',
-      sortOrder: 'desc'
-    };
-    setFilters(clearedFilters);
+      sortBy: '-createdAt',
+      myIssues: false,
+      following: false,
+    });
   };
 
-  const hasActiveFilters = Object.values(filters).some(value => 
-    value && value !== '' && value !== 'createdAt' && value !== 'desc'
-  );
+  const toggleAdvanced = () => {
+    setShowAdvanced(!showAdvanced);
+  };
+
+  const quickFilters = [
+    { label: 'All', status: '' },
+    { label: 'Open', status: 'open' },
+    { label: 'In Progress', status: 'in-progress' },
+    { label: 'Resolved', status: 'resolved' },
+  ];
 
   return (
-    <div className="card" style={{ marginBottom: '2rem' }}>
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center',
-        marginBottom: '1rem'
-      }}>
-        <h3 style={{ margin: 0 }}>Filters</h3>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <button
-            type="button"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="btn btn-secondary"
-            style={{ fontSize: '0.8rem' }}
-          >
-            {showAdvanced ? 'Hide' : 'Show'} Advanced
-          </button>
-          {hasActiveFilters && (
+    <div className="issue-filters">
+      {/* Search Bar */}
+      <div className="filter-search">
+        <div className="search-wrapper">
+          <span className="search-icon">🔍</span>
+          <input
+            type="text"
+            placeholder="Search issues..."
+            value={filters.search}
+            onChange={handleSearchChange}
+            className="search-input"
+          />
+          {filters.search && (
             <button
-              type="button"
-              onClick={clearFilters}
-              className="btn btn-danger"
-              style={{ fontSize: '0.8rem' }}
+              className="search-clear"
+              onClick={() => handleFilterChange('search', '')}
+              aria-label="Clear search"
             >
-              Clear All
+              ✕
             </button>
           )}
         </div>
       </div>
 
-      {/* Basic Filters */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-        <div className="form-group">
-          <label htmlFor="search">Search</label>
-          <input
-            type="text"
-            id="search"
-            className="form-control"
-            value={filters.search}
-            onChange={(e) => handleFilterChange('search', e.target.value)}
-            placeholder="Search issues..."
-          />
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="status">Status</label>
-          <select
-            id="status"
-            className="form-control"
-            value={filters.status}
-            onChange={(e) => handleFilterChange('status', e.target.value)}
+      {/* Quick Filters */}
+      <div className="quick-filters">
+        {quickFilters.map((filter) => (
+          <button
+            key={filter.status}
+            className={`quick-filter-btn ${
+              filters.status === filter.status ? 'active' : ''
+            }`}
+            onClick={() => handleFilterChange('status', filter.status)}
           >
-            <option value="">All Statuses</option>
-            <option value="Reported">Reported</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Resolved">Resolved</option>
-          </select>
-        </div>
+            {filter.label}
+          </button>
+        ))}
+      </div>
 
-        <div className="form-group">
-          <label htmlFor="category">Category</label>
+      {/* Main Filters Row */}
+      <div className="main-filters">
+        {/* Category Filter */}
+        <div className="filter-group">
+          <label className="filter-label">Category</label>
           <select
-            id="category"
-            className="form-control"
             value={filters.category}
             onChange={(e) => handleFilterChange('category', e.target.value)}
+            className="filter-select"
           >
             <option value="">All Categories</option>
-            {categories.map(category => (
-              <option key={category._id} value={category._id}>
-                {category.name}
+            {categories.map((cat) => (
+              <option key={cat._id} value={cat._id}>
+                {cat.icon} {cat.displayName}
               </option>
             ))}
           </select>
         </div>
 
-        <div className="form-group">
-          <label htmlFor="priority">Priority</label>
+        {/* Priority Filter */}
+        <div className="filter-group">
+          <label className="filter-label">Priority</label>
           <select
-            id="priority"
-            className="form-control"
             value={filters.priority}
             onChange={(e) => handleFilterChange('priority', e.target.value)}
+            className="filter-select"
           >
             <option value="">All Priorities</option>
-            <option value="Low">Low</option>
-            <option value="Medium">Medium</option>
-            <option value="High">High</option>
-            <option value="Critical">Critical</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="urgent">Urgent</option>
           </select>
+        </div>
+
+        {/* Sort Filter */}
+        <div className="filter-group">
+          <label className="filter-label">Sort By</label>
+          <select
+            value={filters.sortBy}
+            onChange={(e) => handleFilterChange('sortBy', e.target.value)}
+            className="filter-select"
+          >
+            <option value="-createdAt">Newest First</option>
+            <option value="createdAt">Oldest First</option>
+            <option value="-updatedAt">Recently Updated</option>
+            <option value="title">Title (A-Z)</option>
+            <option value="-title">Title (Z-A)</option>
+            <option value="-priority">Priority (High to Low)</option>
+            <option value="priority">Priority (Low to High)</option>
+            <option value="-stats.upvotes">Most Upvoted</option>
+            <option value="-stats.views">Most Viewed</option>
+          </select>
+        </div>
+
+        {/* Advanced Toggle */}
+        <div className="filter-group">
+          <button className="btn-advanced" onClick={toggleAdvanced}>
+            <span>Advanced</span>
+            <span className={`arrow ${showAdvanced ? 'up' : 'down'}`}>▼</span>
+            {activeFilterCount > 0 && (
+              <span className="filter-badge">{activeFilterCount}</span>
+            )}
+          </button>
         </div>
       </div>
 
       {/* Advanced Filters */}
       {showAdvanced && (
-        <div style={{ 
-          marginTop: '1rem', 
-          paddingTop: '1rem', 
-          borderTop: '1px solid #dee2e6' 
-        }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-            <div className="form-group">
-              <label htmlFor="assignedTo">Assigned To</label>
+        <div className="advanced-filters">
+          <div className="advanced-grid">
+            {/* Status Filter (detailed) */}
+            <div className="filter-group">
+              <label className="filter-label">Status</label>
               <select
-                id="assignedTo"
-                className="form-control"
-                value={filters.assignedTo}
-                onChange={(e) => handleFilterChange('assignedTo', e.target.value)}
+                value={filters.status}
+                onChange={(e) => handleFilterChange('status', e.target.value)}
+                className="filter-select"
               >
-                <option value="">All Users</option>
-                <option value="me">Assigned to Me</option>
-                <option value="unassigned">Unassigned</option>
+                <option value="">All Status</option>
+                <option value="open">Open</option>
+                <option value="in-progress">In Progress</option>
+                <option value="resolved">Resolved</option>
+                <option value="closed">Closed</option>
+                <option value="rejected">Rejected</option>
               </select>
             </div>
 
-            <div className="form-group">
-              <label htmlFor="dateRange">Date Range</label>
+            {/* Date Range */}
+            <div className="filter-group">
+              <label className="filter-label">Date Range</label>
               <select
-                id="dateRange"
-                className="form-control"
                 value={filters.dateRange}
-                onChange={(e) => handleFilterChange('dateRange', e.target.value)}
+                onChange={(e) =>
+                  handleFilterChange('dateRange', e.target.value)
+                }
+                className="filter-select"
               >
                 <option value="">All Time</option>
                 <option value="today">Today</option>
                 <option value="week">This Week</option>
                 <option value="month">This Month</option>
-                <option value="quarter">This Quarter</option>
+                <option value="quarter">Last 3 Months</option>
+                <option value="year">This Year</option>
               </select>
             </div>
 
-            <div className="form-group">
-              <label htmlFor="sortBy">Sort By</label>
-              <select
-                id="sortBy"
-                className="form-control"
-                value={filters.sortBy}
-                onChange={(e) => handleFilterChange('sortBy', e.target.value)}
-              >
-                <option value="createdAt">Created Date</option>
-                <option value="updatedAt">Updated Date</option>
-                <option value="title">Title</option>
-                <option value="status">Status</option>
-                <option value="priority">Priority</option>
-              </select>
-            </div>
+            {/* User-specific Filters */}
+            {showUserFilters && user && (
+              <>
+                {/* My Issues */}
+                <div className="filter-group">
+                  <label className="filter-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={filters.myIssues}
+                      onChange={(e) =>
+                        handleFilterChange('myIssues', e.target.checked)
+                      }
+                    />
+                    <span>My Issues Only</span>
+                  </label>
+                </div>
 
-            <div className="form-group">
-              <label htmlFor="sortOrder">Sort Order</label>
-              <select
-                id="sortOrder"
-                className="form-control"
-                value={filters.sortOrder}
-                onChange={(e) => handleFilterChange('sortOrder', e.target.value)}
-              >
-                <option value="desc">Newest First</option>
-                <option value="asc">Oldest First</option>
-              </select>
-            </div>
+                {/* Following */}
+                <div className="filter-group">
+                  <label className="filter-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={filters.following}
+                      onChange={(e) =>
+                        handleFilterChange('following', e.target.checked)
+                      }
+                    />
+                    <span>Following</span>
+                  </label>
+                </div>
+
+                {/* Assigned to Me (for authority/admin) */}
+                {(user.role === 'authority' || user.role === 'admin') && (
+                  <div className="filter-group">
+                    <label className="filter-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={filters.assignedTo === user._id}
+                        onChange={(e) =>
+                          handleFilterChange(
+                            'assignedTo',
+                            e.target.checked ? user._id : '',
+                          )
+                        }
+                      />
+                      <span>Assigned to Me</span>
+                    </label>
+                  </div>
+                )}
+              </>
+            )}
           </div>
+
+          {/* Clear Filters Button */}
+          {activeFilterCount > 0 && (
+            <div className="filter-actions">
+              <button className="btn-clear-filters" onClick={clearFilters}>
+                <span>✕</span>
+                Clear All Filters ({activeFilterCount})
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Active Filters Display */}
-      {hasActiveFilters && (
-        <div style={{ 
-          marginTop: '1rem', 
-          padding: '0.5rem',
-          backgroundColor: '#f8f9fa',
-          borderRadius: '4px',
-          fontSize: '0.9rem'
-        }}>
-          <strong>Active Filters:</strong>
-          {Object.entries(filters).map(([key, value]) => {
-            if (!value || value === '' || (key === 'sortBy' && value === 'createdAt') || (key === 'sortOrder' && value === 'desc')) {
-              return null;
-            }
-            
-            let displayValue = value;
-            if (key === 'category') {
-              const category = categories.find(c => c._id === value);
-              displayValue = category ? category.name : value;
-            }
-            
-            return (
-              <span key={key} style={{ 
-                display: 'inline-block',
-                margin: '0.25rem',
-                padding: '0.25rem 0.5rem',
-                backgroundColor: '#007bff',
-                color: 'white',
-                borderRadius: '4px',
-                fontSize: '0.8rem'
-              }}>
-                {key}: {displayValue}
-                <button
-                  type="button"
-                  onClick={() => handleFilterChange(key, '')}
-                  style={{
-                    marginLeft: '0.5rem',
-                    background: 'none',
-                    border: 'none',
-                    color: 'white',
-                    cursor: 'pointer'
-                  }}
-                >
-                  ×
+      {/* Active Filters Pills */}
+      {activeFilterCount > 0 && (
+        <div className="active-filters">
+          <span className="active-filters-label">Active Filters:</span>
+          <div className="filter-pills">
+            {filters.search && (
+              <div className="filter-pill">
+                <span>Search: "{filters.search}"</span>
+                <button onClick={() => handleFilterChange('search', '')}>
+                  ✕
                 </button>
-              </span>
-            );
-          })}
+              </div>
+            )}
+            {filters.status && (
+              <div className="filter-pill">
+                <span>Status: {filters.status}</span>
+                <button onClick={() => handleFilterChange('status', '')}>
+                  ✕
+                </button>
+              </div>
+            )}
+            {filters.category && (
+              <div className="filter-pill">
+                <span>
+                  Category:{' '}
+                  {
+                    categories.find((c) => c._id === filters.category)
+                      ?.displayName
+                  }
+                </span>
+                <button onClick={() => handleFilterChange('category', '')}>
+                  ✕
+                </button>
+              </div>
+            )}
+            {filters.priority && (
+              <div className="filter-pill">
+                <span>Priority: {filters.priority}</span>
+                <button onClick={() => handleFilterChange('priority', '')}>
+                  ✕
+                </button>
+              </div>
+            )}
+            {filters.dateRange && (
+              <div className="filter-pill">
+                <span>Date: {filters.dateRange}</span>
+                <button onClick={() => handleFilterChange('dateRange', '')}>
+                  ✕
+                </button>
+              </div>
+            )}
+            {filters.myIssues && (
+              <div className="filter-pill">
+                <span>My Issues</span>
+                <button onClick={() => handleFilterChange('myIssues', false)}>
+                  ✕
+                </button>
+              </div>
+            )}
+            {filters.following && (
+              <div className="filter-pill">
+                <span>Following</span>
+                <button onClick={() => handleFilterChange('following', false)}>
+                  ✕
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

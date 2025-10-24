@@ -1,20 +1,61 @@
 const User = require('../models/User');
+const Issue = require('../models/Issue');
+const Interaction = require('../models/Interaction');
+const Activity = require('../models/Activity');
 
 // @desc    Get all users
 // @route   GET /api/users
 // @access  Private/Admin
 const getUsers = async (req, res) => {
   try {
-    const users = await User.find({}).select('-password');
+    const {
+      page = 1,
+      limit = 10,
+      role,
+      isActive,
+      search,
+      sort = '-createdAt',
+    } = req.query;
+
+    // Build query
+    const query = {};
+
+    if (role) query.role = role;
+    if (isActive !== undefined && isActive !== 'all') {
+      query.isActive = isActive === 'true';
+    }
+
+    // Search by name or email
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    const users = await User.find(query)
+      .select('-password')
+      .sort(sort)
+      .limit(parseInt(limit))
+      .skip((page - 1) * limit);
+
+    const total = await User.countDocuments(query);
 
     res.json({
-      count: users.length,
-      users,
+      success: true,
+      data: users,
+      pagination: {
+        total,
+        totalPages: Math.ceil(total / limit),
+        currentPage: parseInt(page),
+        limit: parseInt(limit),
+      },
     });
   } catch (error) {
     console.error('Get users error:', error);
     res.status(500).json({
-      message: 'Server error',
+      success: false,
+      message: 'Server error fetching users',
     });
   }
 };
@@ -28,24 +69,128 @@ const getUserById = async (req, res) => {
 
     if (!user) {
       return res.status(404).json({
+        success: false,
         message: 'User not found',
       });
     }
 
-    res.json(user);
+    // Get user statistics
+    const issueStats = await Issue.aggregate([
+      {
+        $match: {
+          $or: [{ reportedBy: user._id }, { assignedTo: user._id }],
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalReported: {
+            $sum: { $cond: [{ $eq: ['$reportedBy', user._id] }, 1, 0] },
+          },
+          totalAssigned: {
+            $sum: { $cond: [{ $eq: ['$assignedTo', user._id] }, 1, 0] },
+          },
+          resolved: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $in: ['$status', ['resolved', 'closed']] },
+                    {
+                      $or: [
+                        { $eq: ['$reportedBy', user._id] },
+                        { $eq: ['$assignedTo', user._id] },
+                      ],
+                    },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          inProgress: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$status', 'in-progress'] },
+                    { $eq: ['$assignedTo', user._id] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]);
+
+    // Get interaction stats
+    const interactionStats = await Interaction.aggregate([
+      { $match: { user: user._id } },
+      {
+        $group: {
+          _id: '$type',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        ...user.toObject(),
+        statistics: {
+          issues: issueStats[0] || {
+            totalReported: 0,
+            totalAssigned: 0,
+            resolved: 0,
+            inProgress: 0,
+          },
+          interactions: {
+            comments:
+              interactionStats.find((s) => s._id === 'comment')?.count || 0,
+            upvotes:
+              interactionStats.find((s) => s._id === 'upvote')?.count || 0,
+            follows:
+              interactionStats.find((s) => s._id === 'follow')?.count || 0,
+          },
+        },
+      },
+    });
   } catch (error) {
     console.error('Get user error:', error);
     res.status(500).json({
-      message: 'Server error',
+      success: false,
+      message: 'Server error fetching user',
     });
   }
 };
 
-// @desc    Update user profile
+// @desc    Update user
 // @route   PUT /api/users/:id
 // @access  Private
 const updateUser = async (req, res) => {
   try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // Check if user is updating their own profile or is admin
+    if (req.user.id !== req.params.id && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to update this user',
+      });
+    }
+
     const {
       name,
       email,
@@ -57,21 +202,6 @@ const updateUser = async (req, res) => {
       dateOfBirth,
       profession,
     } = req.body;
-
-    const user = await User.findById(req.params.id);
-
-    if (!user) {
-      return res.status(404).json({
-        message: 'User not found',
-      });
-    }
-
-    // Check if user is updating their own profile or is admin
-    if (req.user.id !== req.params.id && req.user.role !== 'admin') {
-      return res.status(403).json({
-        message: 'Not authorized to update this user',
-      });
-    }
 
     // Prepare update data
     const updateData = {};
@@ -92,6 +222,7 @@ const updateUser = async (req, res) => {
     if (gender !== undefined) {
       if (gender !== null && !['male', 'female', 'other'].includes(gender)) {
         return res.status(400).json({
+          success: false,
           message: 'Gender must be male, female, other, or null',
         });
       }
@@ -103,6 +234,7 @@ const updateUser = async (req, res) => {
         const date = new Date(dateOfBirth);
         if (isNaN(date.getTime())) {
           return res.status(400).json({
+            success: false,
             message: 'Invalid date of birth',
           });
         }
@@ -116,6 +248,7 @@ const updateUser = async (req, res) => {
       if (profession !== null && typeof profession === 'string') {
         if (profession.length > 100) {
           return res.status(400).json({
+            success: false,
             message: 'Profession cannot exceed 100 characters',
           });
         }
@@ -129,6 +262,7 @@ const updateUser = async (req, res) => {
     if (role && req.user.role === 'admin') {
       if (!['resident', 'authority', 'admin'].includes(role)) {
         return res.status(400).json({
+          success: false,
           message: 'Invalid role',
         });
       }
@@ -145,31 +279,24 @@ const updateUser = async (req, res) => {
     ).select('-password');
 
     res.json({
-      _id: updatedUser._id,
-      name: updatedUser.name,
-      email: updatedUser.email,
-      role: updatedUser.role,
-      gender: updatedUser.gender,
-      dateOfBirth: updatedUser.dateOfBirth,
-      profession: updatedUser.profession,
-      location: updatedUser.location,
-      avatar: updatedUser.avatar,
-      isActive: updatedUser.isActive,
-      createdAt: updatedUser.createdAt,
-      updatedAt: updatedUser.updatedAt,
+      success: true,
+      message: 'User updated successfully',
+      data: updatedUser,
     });
   } catch (error) {
     console.error('Update user error:', error);
 
     if (error.code === 11000) {
       return res.status(400).json({
+        success: false,
         message: 'Email already exists',
       });
     }
 
     res.status(500).json({
-      message: 'Server error',
-      error: error.message,
+      success: false,
+      message: 'Server error updating user',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
   }
 };
@@ -183,6 +310,7 @@ const deleteUser = async (req, res) => {
 
     if (!user) {
       return res.status(404).json({
+        success: false,
         message: 'User not found',
       });
     }
@@ -190,19 +318,48 @@ const deleteUser = async (req, res) => {
     // Prevent admin from deleting themselves
     if (req.user.id === req.params.id) {
       return res.status(400).json({
+        success: false,
         message: 'Cannot delete your own account',
       });
     }
 
-    await User.findByIdAndDelete(req.params.id);
+    // Check if user has active issues
+    const issueCount = await Issue.countDocuments({
+      reportedBy: user._id,
+      status: { $in: ['open', 'in-progress'] },
+    });
+
+    if (issueCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete user. They have ${issueCount} active issue(s). Please resolve or reassign them first.`,
+      });
+    }
+
+    // Check if user is assigned to issues
+    const assignedCount = await Issue.countDocuments({
+      assignedTo: user._id,
+      status: { $in: ['open', 'in-progress'] },
+    });
+
+    if (assignedCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete user. They are assigned to ${assignedCount} active issue(s). Please reassign them first.`,
+      });
+    }
+
+    await user.deleteOne();
 
     res.json({
+      success: true,
       message: 'User deleted successfully',
     });
   } catch (error) {
     console.error('Delete user error:', error);
     res.status(500).json({
-      message: 'Server error',
+      success: false,
+      message: 'Server error deleting user',
     });
   }
 };
@@ -212,37 +369,76 @@ const deleteUser = async (req, res) => {
 // @access  Private
 const getNearbyUsers = async (req, res) => {
   try {
-    const { latitude, longitude, radius = 5000 } = req.query; // radius in meters
+    const { latitude, longitude, radius = 5000 } = req.query;
 
     if (!latitude || !longitude) {
       return res.status(400).json({
+        success: false,
         message: 'Latitude and longitude are required',
       });
     }
 
+    const lat = parseFloat(latitude);
+    const lon = parseFloat(longitude);
+    const radiusInDegrees = parseInt(radius) / 111320; // Convert meters to degrees (approximate)
+
     const users = await User.find({
-      location: {
-        $near: {
-          $geometry: {
-            type: 'Point',
-            coordinates: [parseFloat(longitude), parseFloat(latitude)],
-          },
-          $maxDistance: parseInt(radius),
-        },
+      'location.latitude': {
+        $gte: lat - radiusInDegrees,
+        $lte: lat + radiusInDegrees,
       },
-    }).select('-password');
+      'location.longitude': {
+        $gte: lon - radiusInDegrees,
+        $lte: lon + radiusInDegrees,
+      },
+      _id: { $ne: req.user._id }, // Exclude current user
+      isActive: true,
+    }).select('name email avatar role profession location');
+
+    // Further filter by actual distance using Haversine formula
+    const filteredUsers = users.filter((user) => {
+      const distance = calculateDistance(
+        lat,
+        lon,
+        user.location.latitude,
+        user.location.longitude,
+      );
+      return distance <= parseInt(radius);
+    });
 
     res.json({
-      count: users.length,
-      radius: `${radius}m`,
-      users,
+      success: true,
+      data: filteredUsers,
+      count: filteredUsers.length,
+      searchParams: {
+        latitude: lat,
+        longitude: lon,
+        radius: parseInt(radius),
+      },
     });
   } catch (error) {
     console.error('Get nearby users error:', error);
     res.status(500).json({
-      message: 'Server error',
+      success: false,
+      message: 'Server error fetching nearby users',
     });
   }
+};
+
+// Helper function to calculate distance between two coordinates (Haversine formula)
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371e3; // Earth's radius in meters
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // Distance in meters
 };
 
 // @desc    Toggle user active status
@@ -254,7 +450,16 @@ const toggleUserActive = async (req, res) => {
 
     if (!user) {
       return res.status(404).json({
+        success: false,
         message: 'User not found',
+      });
+    }
+
+    // Prevent admin from deactivating themselves
+    if (req.user.id === req.params.id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot deactivate your own account',
       });
     }
 
@@ -262,15 +467,281 @@ const toggleUserActive = async (req, res) => {
     await user.save();
 
     res.json({
+      success: true,
       message: `User ${
         user.isActive ? 'activated' : 'deactivated'
       } successfully`,
-      isActive: user.isActive,
+      data: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        isActive: user.isActive,
+      },
     });
   } catch (error) {
     console.error('Toggle user active error:', error);
     res.status(500).json({
+      success: false,
       message: 'Server error',
+    });
+  }
+};
+
+// @desc    Change user role
+// @route   PATCH /api/users/:id/role
+// @access  Private/Admin
+const changeUserRole = async (req, res) => {
+  try {
+    const { role } = req.body;
+
+    if (!['resident', 'authority', 'admin'].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role',
+      });
+    }
+
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // Prevent changing own role
+    if (req.user.id === req.params.id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot change your own role',
+      });
+    }
+
+    const oldRole = user.role;
+    user.role = role;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'User role updated successfully',
+      data: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        oldRole,
+        newRole: role,
+      },
+    });
+  } catch (error) {
+    console.error('Change user role error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+    });
+  }
+};
+
+// @desc    Get user activity history
+// @route   GET /api/users/:id/activity
+// @access  Private
+const getUserActivity = async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // Only user themselves or admin can view activity
+    if (req.user.id !== req.params.id && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to view this activity',
+      });
+    }
+
+    const activities = await Activity.find({ user: user._id })
+      .populate('issue', 'title status category')
+      .populate({
+        path: 'issue',
+        populate: { path: 'category', select: 'name displayName icon' },
+      })
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .skip((page - 1) * limit);
+
+    const total = await Activity.countDocuments({ user: user._id });
+
+    res.json({
+      success: true,
+      data: activities,
+      pagination: {
+        total,
+        totalPages: Math.ceil(total / limit),
+        currentPage: parseInt(page),
+        limit: parseInt(limit),
+      },
+    });
+  } catch (error) {
+    console.error('Get user activity error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error fetching activity',
+    });
+  }
+};
+
+// @desc    Get user statistics
+// @route   GET /api/users/:id/stats
+// @access  Private
+const getUserStats = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // Get issue statistics
+    const issueStats = await Issue.aggregate([
+      {
+        $match: {
+          $or: [{ reportedBy: user._id }, { assignedTo: user._id }],
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalReported: {
+            $sum: { $cond: [{ $eq: ['$reportedBy', user._id] }, 1, 0] },
+          },
+          totalAssigned: {
+            $sum: { $cond: [{ $eq: ['$assignedTo', user._id] }, 1, 0] },
+          },
+          resolved: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$status', 'resolved'] },
+                    {
+                      $or: [
+                        { $eq: ['$reportedBy', user._id] },
+                        { $eq: ['$assignedTo', user._id] },
+                      ],
+                    },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          inProgress: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$status', 'in-progress'] },
+                    { $eq: ['$assignedTo', user._id] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]);
+
+    // Get interaction statistics
+    const interactionStats = await Interaction.aggregate([
+      { $match: { user: user._id } },
+      {
+        $group: {
+          _id: '$type',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // Get monthly activity trend
+    const monthlyActivity = await Activity.aggregate([
+      {
+        $match: {
+          user: user._id,
+          createdAt: { $gte: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000) },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$createdAt' },
+            month: { $month: '$createdAt' },
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1 } },
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        issues: issueStats[0] || {
+          totalReported: 0,
+          totalAssigned: 0,
+          resolved: 0,
+          inProgress: 0,
+        },
+        interactions: {
+          comments:
+            interactionStats.find((s) => s._id === 'comment')?.count || 0,
+          upvotes: interactionStats.find((s) => s._id === 'upvote')?.count || 0,
+          follows: interactionStats.find((s) => s._id === 'follow')?.count || 0,
+        },
+        monthlyActivity,
+      },
+    });
+  } catch (error) {
+    console.error('Get user stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error fetching statistics',
+    });
+  }
+};
+
+// @desc    Get all authorities
+// @route   GET /api/users/authorities
+// @access  Private/Admin
+const getAuthorities = async (req, res) => {
+  try {
+    const authorities = await User.find({
+      role: { $in: ['authority', 'admin'] },
+      isActive: true,
+    }).select('name email avatar role');
+
+    res.json({
+      success: true,
+      data: authorities,
+      count: authorities.length,
+    });
+  } catch (error) {
+    console.error('Get authorities error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error fetching authorities',
     });
   }
 };
@@ -282,4 +753,8 @@ module.exports = {
   deleteUser,
   getNearbyUsers,
   toggleUserActive,
+  changeUserRole,
+  getUserActivity,
+  getUserStats,
+  getAuthorities,
 };

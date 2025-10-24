@@ -1,116 +1,166 @@
 const Category = require('../models/Category');
-const User = require('../models/User');
 
 // @desc    Get all categories
 // @route   GET /api/categories
-// @access  Private/Admin
+// @access  Public
 const getCategories = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search, isActive } = req.query;
-    
+    const {
+      page = 1,
+      limit = 50,
+      search,
+      isActive = 'true',
+      sort = 'order',
+    } = req.query;
+
     // Build query
     const query = {};
+
     if (search) {
-      query.name = { $regex: search, $options: 'i' };
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { displayName: { $regex: search, $options: 'i' } },
+      ];
     }
-    if (isActive !== undefined) {
+
+    if (isActive !== undefined && isActive !== 'all') {
       query.isActive = isActive === 'true';
     }
 
+    // Determine sort order
+    let sortOption = {};
+    switch (sort) {
+      case 'name':
+        sortOption = { name: 1 };
+        break;
+      case 'issues':
+        sortOption = { 'metadata.issueCount': -1 };
+        break;
+      case 'recent':
+        sortOption = { createdAt: -1 };
+        break;
+      default:
+        sortOption = { order: 1, name: 1 };
+    }
+
     const categories = await Category.find(query)
-      .populate('assignedUsers', 'name email role')
-      .populate('createdBy', 'name email')
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
+      .populate('parent', 'name displayName icon')
+      .sort(sortOption)
+      .limit(parseInt(limit))
       .skip((page - 1) * limit);
 
     const total = await Category.countDocuments(query);
 
     res.json({
-      categories,
-      totalPages: Math.ceil(total / limit),
-      currentPage: page,
-      total
+      success: true,
+      data: categories,
+      pagination: {
+        total,
+        totalPages: Math.ceil(total / limit),
+        currentPage: parseInt(page),
+        limit: parseInt(limit),
+      },
     });
   } catch (error) {
     console.error('Get categories error:', error);
     res.status(500).json({
-      message: 'Server error'
+      success: false,
+      message: 'Server error fetching categories',
     });
   }
 };
 
-// @desc    Get category by ID
+// @desc    Get single category
 // @route   GET /api/categories/:id
-// @access  Private/Admin
-const getCategoryById = async (req, res) => {
+// @access  Public
+const getCategory = async (req, res) => {
   try {
-    const category = await Category.findById(req.params.id)
-      .populate('assignedUsers', 'name email role location')
-      .populate('createdBy', 'name email');
+    const category = await Category.findById(req.params.id).populate(
+      'parent',
+      'name displayName icon color',
+    );
 
     if (!category) {
       return res.status(404).json({
-        message: 'Category not found'
+        success: false,
+        message: 'Category not found',
       });
     }
 
-    res.json({ category });
+    // Get subcategories if any
+    const subcategories = await Category.find({ parent: category._id }).sort({
+      order: 1,
+      name: 1,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        ...category.toObject(),
+        subcategories,
+      },
+    });
   } catch (error) {
     console.error('Get category error:', error);
     res.status(500).json({
-      message: 'Server error'
+      success: false,
+      message: 'Server error fetching category',
     });
   }
 };
 
-// @desc    Create new category
+// @desc    Create category
 // @route   POST /api/categories
 // @access  Private/Admin
 const createCategory = async (req, res) => {
   try {
-    const { name, assignedUsers, description } = req.body;
+    const { name, displayName, description, icon, color, parent, order } =
+      req.body;
 
     // Check if category already exists
-    const existingCategory = await Category.findOne({ name });
+    const existingCategory = await Category.findOne({
+      name: name.toLowerCase().trim(),
+    });
+
     if (existingCategory) {
       return res.status(400).json({
-        message: 'Category with this name already exists'
+        success: false,
+        message: 'Category with this name already exists',
       });
     }
 
-    // Validate assigned users exist
-    if (assignedUsers && assignedUsers.length > 0) {
-      const existingUsers = await User.find({
-        _id: { $in: assignedUsers }
-      });
-      
-      if (existingUsers.length !== assignedUsers.length) {
-        return res.status(400).json({
-          message: 'One or more assigned users do not exist'
+    // If parent is provided, verify it exists
+    if (parent) {
+      const parentCategory = await Category.findById(parent);
+      if (!parentCategory) {
+        return res.status(404).json({
+          success: false,
+          message: 'Parent category not found',
         });
       }
     }
 
     const category = await Category.create({
-      name,
-      assignedUsers: assignedUsers || [],
+      name: name.toLowerCase().trim(),
+      displayName: displayName || name,
       description: description || '',
-      createdBy: req.user.id
+      icon: icon || '📁',
+      color: color || '#667eea',
+      parent: parent || null,
+      order: order || 0,
+      isActive: true,
     });
 
-    const populatedCategory = await Category.findById(category._id)
-      .populate('assignedUsers', 'name email role')
-      .populate('createdBy', 'name email');
-
     res.status(201).json({
+      success: true,
       message: 'Category created successfully',
-      category: populatedCategory
+      data: category,
     });
   } catch (error) {
     console.error('Create category error:', error);
     res.status(500).json({
-      message: 'Server error'
+      success: false,
+      message: 'Server error creating category',
     });
   }
 };
@@ -120,59 +170,92 @@ const createCategory = async (req, res) => {
 // @access  Private/Admin
 const updateCategory = async (req, res) => {
   try {
-    const { name, assignedUsers, description, isActive } = req.body;
-    
     const category = await Category.findById(req.params.id);
+
     if (!category) {
       return res.status(404).json({
-        message: 'Category not found'
+        success: false,
+        message: 'Category not found',
       });
     }
 
-    // Check if name is being changed and if it already exists
-    if (name && name !== category.name) {
-      const existingCategory = await Category.findOne({ name });
+    const {
+      name,
+      displayName,
+      description,
+      icon,
+      color,
+      parent,
+      order,
+      isActive,
+    } = req.body;
+
+    // Check if new name conflicts with existing category
+    if (name && name.toLowerCase() !== category.name) {
+      const existingCategory = await Category.findOne({
+        name: name.toLowerCase().trim(),
+        _id: { $ne: req.params.id },
+      });
+
       if (existingCategory) {
         return res.status(400).json({
-          message: 'Category with this name already exists'
+          success: false,
+          message: 'Category with this name already exists',
         });
       }
     }
 
-    // Validate assigned users if provided
-    if (assignedUsers && assignedUsers.length > 0) {
-      const existingUsers = await User.find({
-        _id: { $in: assignedUsers }
-      });
-      
-      if (existingUsers.length !== assignedUsers.length) {
+    // Prevent setting parent to self or creating circular reference
+    if (parent) {
+      if (parent.toString() === req.params.id) {
         return res.status(400).json({
-          message: 'One or more assigned users do not exist'
+          success: false,
+          message: 'Category cannot be its own parent',
+        });
+      }
+
+      const parentCategory = await Category.findById(parent);
+      if (!parentCategory) {
+        return res.status(404).json({
+          success: false,
+          message: 'Parent category not found',
+        });
+      }
+
+      // Check if parent has this category as parent (circular reference)
+      if (
+        parentCategory.parent &&
+        parentCategory.parent.toString() === req.params.id
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: 'Circular reference detected',
         });
       }
     }
 
-    const updateData = {};
-    if (name !== undefined) updateData.name = name;
-    if (assignedUsers !== undefined) updateData.assignedUsers = assignedUsers;
-    if (description !== undefined) updateData.description = description;
-    if (isActive !== undefined) updateData.isActive = isActive;
+    // Update fields
+    if (name) category.name = name.toLowerCase().trim();
+    if (displayName) category.displayName = displayName;
+    if (description !== undefined) category.description = description;
+    if (icon) category.icon = icon;
+    if (color) category.color = color;
+    if (parent !== undefined) category.parent = parent || null;
+    if (order !== undefined) category.order = order;
+    if (isActive !== undefined) category.isActive = isActive;
 
-    const updatedCategory = await Category.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true, runValidators: true }
-    ).populate('assignedUsers', 'name email role')
-     .populate('createdBy', 'name email');
+    await category.save();
 
     res.json({
+      success: true,
       message: 'Category updated successfully',
-      category: updatedCategory
+      data: category,
     });
   } catch (error) {
     console.error('Update category error:', error);
     res.status(500).json({
-      message: 'Server error'
+      success: false,
+      message: 'Server error updating category',
     });
   }
 };
@@ -183,129 +266,259 @@ const updateCategory = async (req, res) => {
 const deleteCategory = async (req, res) => {
   try {
     const category = await Category.findById(req.params.id);
-    
+
     if (!category) {
       return res.status(404).json({
-        message: 'Category not found'
+        success: false,
+        message: 'Category not found',
       });
     }
 
-    await Category.findByIdAndDelete(req.params.id);
+    // Check if category has issues
+    const Issue = require('../models/Issue');
+    const issueCount = await Issue.countDocuments({ category: req.params.id });
+
+    if (issueCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete category. ${issueCount} issue(s) are using this category. Please reassign or delete those issues first.`,
+      });
+    }
+
+    // Check if category has subcategories
+    const subcategoryCount = await Category.countDocuments({
+      parent: req.params.id,
+    });
+
+    if (subcategoryCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete category. It has ${subcategoryCount} subcategory(ies). Please delete or reassign subcategories first.`,
+      });
+    }
+
+    await category.deleteOne();
 
     res.json({
-      message: 'Category deleted successfully'
+      success: true,
+      message: 'Category deleted successfully',
     });
   } catch (error) {
     console.error('Delete category error:', error);
     res.status(500).json({
-      message: 'Server error'
+      success: false,
+      message: 'Server error deleting category',
     });
   }
 };
 
-// @desc    Assign users to category
-// @route   PUT /api/categories/:id/assign
+// @desc    Toggle category active status
+// @route   PATCH /api/categories/:id/toggle
 // @access  Private/Admin
-const assignUsersToCategory = async (req, res) => {
+const toggleCategoryStatus = async (req, res) => {
   try {
-    const { userIds } = req.body;
-    
-    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
-      return res.status(400).json({
-        message: 'User IDs array is required'
-      });
-    }
-
     const category = await Category.findById(req.params.id);
+
     if (!category) {
       return res.status(404).json({
-        message: 'Category not found'
+        success: false,
+        message: 'Category not found',
       });
     }
 
-    // Validate users exist
-    const existingUsers = await User.find({
-      _id: { $in: userIds }
-    });
-    
-    if (existingUsers.length !== userIds.length) {
-      return res.status(400).json({
-        message: 'One or more users do not exist'
-      });
-    }
-
-    // Add users to category (avoid duplicates)
-    const uniqueUserIds = [...new Set([...category.assignedUsers, ...userIds])];
-    
-    const updatedCategory = await Category.findByIdAndUpdate(
-      req.params.id,
-      { assignedUsers: uniqueUserIds },
-      { new: true, runValidators: true }
-    ).populate('assignedUsers', 'name email role')
-     .populate('createdBy', 'name email');
+    category.isActive = !category.isActive;
+    await category.save();
 
     res.json({
-      message: 'Users assigned to category successfully',
-      category: updatedCategory
+      success: true,
+      message: `Category ${
+        category.isActive ? 'activated' : 'deactivated'
+      } successfully`,
+      data: {
+        _id: category._id,
+        name: category.name,
+        isActive: category.isActive,
+      },
     });
   } catch (error) {
-    console.error('Assign users error:', error);
+    console.error('Toggle category status error:', error);
     res.status(500).json({
-      message: 'Server error'
+      success: false,
+      message: 'Server error toggling category status',
     });
   }
 };
 
-// @desc    Remove users from category
-// @route   PUT /api/categories/:id/unassign
-// @access  Private/Admin
-const unassignUsersFromCategory = async (req, res) => {
+// @desc    Get category statistics
+// @route   GET /api/categories/:id/stats
+// @access  Public
+const getCategoryStats = async (req, res) => {
   try {
-    const { userIds } = req.body;
-    
-    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
-      return res.status(400).json({
-        message: 'User IDs array is required'
-      });
-    }
-
     const category = await Category.findById(req.params.id);
+
     if (!category) {
       return res.status(404).json({
-        message: 'Category not found'
+        success: false,
+        message: 'Category not found',
       });
     }
 
-    // Remove users from category
-    const updatedAssignedUsers = category.assignedUsers.filter(
-      userId => !userIds.includes(userId.toString())
+    const Issue = require('../models/Issue');
+
+    const stats = await Issue.aggregate([
+      { $match: { category: category._id } },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const statsObj = {
+      total: 0,
+      open: 0,
+      inProgress: 0,
+      resolved: 0,
+      closed: 0,
+      rejected: 0,
+    };
+
+    stats.forEach((stat) => {
+      statsObj[stat._id.replace('-', '')] = stat.count;
+      statsObj.total += stat.count;
+    });
+
+    // Update category metadata
+    category.metadata.issueCount = statsObj.total;
+    category.metadata.resolvedCount = statsObj.resolved + statsObj.closed;
+    await category.save();
+
+    res.json({
+      success: true,
+      data: {
+        category: {
+          _id: category._id,
+          name: category.name,
+          displayName: category.displayName,
+          icon: category.icon,
+          color: category.color,
+        },
+        statistics: statsObj,
+      },
+    });
+  } catch (error) {
+    console.error('Get category stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error fetching statistics',
+    });
+  }
+};
+
+// @desc    Get all categories with statistics
+// @route   GET /api/categories/stats/all
+// @access  Public
+const getAllCategoriesStats = async (req, res) => {
+  try {
+    const Issue = require('../models/Issue');
+
+    const stats = await Issue.aggregate([
+      {
+        $group: {
+          _id: '$category',
+          total: { $sum: 1 },
+          open: { $sum: { $cond: [{ $eq: ['$status', 'open'] }, 1, 0] } },
+          inProgress: {
+            $sum: { $cond: [{ $eq: ['$status', 'in-progress'] }, 1, 0] },
+          },
+          resolved: {
+            $sum: { $cond: [{ $eq: ['$status', 'resolved'] }, 1, 0] },
+          },
+          closed: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, 1, 0] } },
+        },
+      },
+      {
+        $lookup: {
+          from: 'categories',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'category',
+        },
+      },
+      { $unwind: '$category' },
+      {
+        $project: {
+          _id: 1,
+          name: '$category.name',
+          displayName: '$category.displayName',
+          icon: '$category.icon',
+          color: '$category.color',
+          total: 1,
+          open: 1,
+          inProgress: 1,
+          resolved: 1,
+          closed: 1,
+        },
+      },
+      { $sort: { total: -1 } },
+    ]);
+
+    res.json({
+      success: true,
+      data: stats,
+    });
+  } catch (error) {
+    console.error('Get all categories stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error fetching statistics',
+    });
+  }
+};
+
+// @desc    Reorder categories
+// @route   PUT /api/categories/reorder
+// @access  Private/Admin
+const reorderCategories = async (req, res) => {
+  try {
+    const { categories } = req.body; // Array of { id, order }
+
+    if (!Array.isArray(categories)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Categories must be an array',
+      });
+    }
+
+    // Update all categories order
+    const updatePromises = categories.map(({ id, order }) =>
+      Category.findByIdAndUpdate(id, { order }),
     );
-    
-    const updatedCategory = await Category.findByIdAndUpdate(
-      req.params.id,
-      { assignedUsers: updatedAssignedUsers },
-      { new: true, runValidators: true }
-    ).populate('assignedUsers', 'name email role')
-     .populate('createdBy', 'name email');
+
+    await Promise.all(updatePromises);
 
     res.json({
-      message: 'Users removed from category successfully',
-      category: updatedCategory
+      success: true,
+      message: 'Categories reordered successfully',
     });
   } catch (error) {
-    console.error('Unassign users error:', error);
+    console.error('Reorder categories error:', error);
     res.status(500).json({
-      message: 'Server error'
+      success: false,
+      message: 'Server error reordering categories',
     });
   }
 };
 
 module.exports = {
   getCategories,
-  getCategoryById,
+  getCategory,
   createCategory,
   updateCategory,
   deleteCategory,
-  assignUsersToCategory,
-  unassignUsersFromCategory
+  toggleCategoryStatus,
+  getCategoryStats,
+  getAllCategoriesStats,
+  reorderCategories,
 };

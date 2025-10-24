@@ -1,4 +1,6 @@
 const User = require('../models/User');
+const Issue = require('../models/Issue');
+const Interaction = require('../models/Interaction');
 const { validationResult } = require('express-validator');
 const jwt = require('jsonwebtoken');
 
@@ -15,7 +17,10 @@ const generateToken = (id) => {
 const register = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    return res.status(400).json({
+      success: false,
+      errors: errors.array(),
+    });
   }
 
   try {
@@ -35,7 +40,18 @@ const register = async (req, res) => {
     // Check if user exists
     const userExists = await User.findOne({ email });
     if (userExists) {
-      return res.status(400).json({ message: 'User already exists' });
+      return res.status(400).json({
+        success: false,
+        message: 'User already exists with this email',
+      });
+    }
+
+    // Validate location
+    if (!latitude || !longitude) {
+      return res.status(400).json({
+        success: false,
+        message: 'Location (latitude and longitude) is required',
+      });
     }
 
     // Create user
@@ -48,31 +64,44 @@ const register = async (req, res) => {
       dateOfBirth: dateOfBirth || null,
       profession: profession || '',
       location: {
-        latitude,
-        longitude,
+        latitude: parseFloat(latitude),
+        longitude: parseFloat(longitude),
       },
       avatar: avatar || '',
     });
 
     if (user) {
       res.status(201).json({
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        gender: user.gender,
-        dateOfBirth: user.dateOfBirth,
-        profession: user.profession,
-        location: user.location,
-        avatar: user.avatar,
+        success: true,
+        message: 'User registered successfully',
+        data: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          gender: user.gender,
+          dateOfBirth: user.dateOfBirth,
+          profession: user.profession,
+          location: user.location,
+          avatar: user.avatar,
+          isActive: user.isActive,
+          createdAt: user.createdAt,
+        },
         token: generateToken(user._id),
       });
     } else {
-      res.status(400).json({ message: 'Invalid user data' });
+      res.status(400).json({
+        success: false,
+        message: 'Invalid user data',
+      });
     }
   } catch (error) {
     console.error('Register error:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({
+      success: false,
+      message: 'Server error during registration',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+    });
   }
 };
 
@@ -82,7 +111,10 @@ const register = async (req, res) => {
 const login = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    return res.status(400).json({
+      success: false,
+      errors: errors.array(),
+    });
   }
 
   try {
@@ -92,31 +124,57 @@ const login = async (req, res) => {
     const user = await User.findOne({ email }).select('+password');
 
     if (!user) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials',
+      });
+    }
+
+    // Check if account is active
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'Account is inactive. Please contact support.',
+      });
     }
 
     // Check password
     const isMatch = await user.comparePassword(password);
 
     if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials',
+      });
     }
 
+    // Update last login (optional - add this field to User model if needed)
+    // user.lastLogin = new Date();
+    // await user.save({ validateBeforeSave: false });
+
     res.json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      gender: user.gender,
-      dateOfBirth: user.dateOfBirth,
-      profession: user.profession,
-      location: user.location,
-      avatar: user.avatar,
+      success: true,
+      message: 'Login successful',
+      data: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        gender: user.gender,
+        dateOfBirth: user.dateOfBirth,
+        profession: user.profession,
+        location: user.location,
+        avatar: user.avatar,
+        isActive: user.isActive,
+      },
       token: generateToken(user._id),
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({
+      success: false,
+      message: 'Server error during login',
+    });
   }
 };
 
@@ -125,26 +183,370 @@ const login = async (req, res) => {
 // @access  Private
 const getMe = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await User.findById(req.user._id);
 
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
     }
 
     res.json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      gender: user.gender,
-      dateOfBirth: user.dateOfBirth,
-      profession: user.profession,
-      location: user.location,
-      avatar: user.avatar,
+      success: true,
+      data: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        gender: user.gender,
+        dateOfBirth: user.dateOfBirth,
+        profession: user.profession,
+        location: user.location,
+        avatar: user.avatar,
+        isActive: user.isActive,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      },
     });
   } catch (error) {
     console.error('Get user error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+    });
+  }
+};
+
+// @desc    Update user profile
+// @route   PUT /api/auth/update
+// @access  Private
+const updateProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    const {
+      name,
+      gender,
+      dateOfBirth,
+      profession,
+      latitude,
+      longitude,
+      avatar,
+    } = req.body;
+
+    // Update allowed fields only (email cannot be changed here)
+    if (name !== undefined) user.name = name;
+    if (gender !== undefined) user.gender = gender;
+    if (dateOfBirth !== undefined) user.dateOfBirth = dateOfBirth;
+    if (profession !== undefined) user.profession = profession;
+    if (avatar !== undefined) user.avatar = avatar;
+
+    // Update location if provided
+    if (latitude !== undefined && longitude !== undefined) {
+      user.location = {
+        latitude: parseFloat(latitude),
+        longitude: parseFloat(longitude),
+      };
+    }
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        gender: user.gender,
+        dateOfBirth: user.dateOfBirth,
+        profession: user.profession,
+        location: user.location,
+        avatar: user.avatar,
+        updatedAt: user.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during profile update',
+    });
+  }
+};
+
+// @desc    Change password
+// @route   PUT /api/auth/password
+// @access  Private
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide current and new password',
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 6 characters',
+      });
+    }
+
+    // Get user with password
+    const user = await User.findById(req.user._id).select('+password');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // Check current password
+    const isMatch = await user.comparePassword(currentPassword);
+
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: 'Current password is incorrect',
+      });
+    }
+
+    // Update password
+    user.password = newPassword;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Password changed successfully',
+    });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during password change',
+    });
+  }
+};
+
+// @desc    Logout user (client-side token removal)
+// @route   POST /api/auth/logout
+// @access  Private
+const logout = (req, res) => {
+  res.json({
+    success: true,
+    message: 'Logged out successfully',
+  });
+};
+
+// @desc    Refresh token
+// @route   POST /api/auth/refresh
+// @access  Private
+const refreshToken = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+
+    if (!user || !user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: 'Not authorized',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Token refreshed successfully',
+      token: generateToken(user._id),
+    });
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+    });
+  }
+};
+
+// @desc    Get user statistics
+// @route   GET /api/auth/stats
+// @access  Private
+const getUserStats = async (req, res) => {
+  try {
+    // Get user's issue statistics
+    const issueStats = await Issue.aggregate([
+      {
+        $match: {
+          $or: [{ reportedBy: req.user._id }, { assignedTo: req.user._id }],
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalReported: {
+            $sum: { $cond: [{ $eq: ['$reportedBy', req.user._id] }, 1, 0] },
+          },
+          totalAssigned: {
+            $sum: { $cond: [{ $eq: ['$assignedTo', req.user._id] }, 1, 0] },
+          },
+          resolved: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $in: ['$status', ['resolved', 'closed']] },
+                    {
+                      $or: [
+                        { $eq: ['$reportedBy', req.user._id] },
+                        { $eq: ['$assignedTo', req.user._id] },
+                      ],
+                    },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          inProgress: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$status', 'in-progress'] },
+                    { $eq: ['$assignedTo', req.user._id] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          open: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$status', 'open'] },
+                    { $eq: ['$reportedBy', req.user._id] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]);
+
+    // Get interaction statistics
+    const interactionStats = await Interaction.aggregate([
+      { $match: { user: req.user._id } },
+      {
+        $group: {
+          _id: '$type',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const stats = {
+      issues: issueStats[0] || {
+        totalReported: 0,
+        totalAssigned: 0,
+        resolved: 0,
+        inProgress: 0,
+        open: 0,
+      },
+      interactions: {
+        comments: interactionStats.find((s) => s._id === 'comment')?.count || 0,
+        upvotes: interactionStats.find((s) => s._id === 'upvote')?.count || 0,
+        downvotes:
+          interactionStats.find((s) => s._id === 'downvote')?.count || 0,
+        follows: interactionStats.find((s) => s._id === 'follow')?.count || 0,
+      },
+    };
+
+    res.json({
+      success: true,
+      data: stats,
+    });
+  } catch (error) {
+    console.error('Get stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error fetching statistics',
+    });
+  }
+};
+
+// @desc    Verify email (for future implementation)
+// @route   GET /api/auth/verify/:token
+// @access  Public
+const verifyEmail = async (req, res) => {
+  try {
+    // TODO: Implement email verification
+    res.json({
+      success: true,
+      message: 'Email verification not yet implemented',
+    });
+  } catch (error) {
+    console.error('Verify email error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+    });
+  }
+};
+
+// @desc    Forgot password (for future implementation)
+// @route   POST /api/auth/forgot-password
+// @access  Public
+const forgotPassword = async (req, res) => {
+  try {
+    // TODO: Implement forgot password
+    res.json({
+      success: true,
+      message: 'Forgot password not yet implemented',
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+    });
+  }
+};
+
+// @desc    Reset password (for future implementation)
+// @route   POST /api/auth/reset-password/:token
+// @access  Public
+const resetPassword = async (req, res) => {
+  try {
+    // TODO: Implement reset password
+    res.json({
+      success: true,
+      message: 'Reset password not yet implemented',
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+    });
   }
 };
 
@@ -152,4 +554,12 @@ module.exports = {
   register,
   login,
   getMe,
+  updateProfile,
+  changePassword,
+  logout,
+  refreshToken,
+  getUserStats,
+  verifyEmail,
+  forgotPassword,
+  resetPassword,
 };

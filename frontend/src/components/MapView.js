@@ -1,391 +1,496 @@
-import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import L from 'leaflet';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import issueService from '../services/issueService';
-import 'leaflet/dist/leaflet.css';
+import IssueDetailModal from './IssueDetailModal';
+import IssueFilters from './IssueFilters';
+import './MapView.css';
 
-// Fix for default markers in react-leaflet
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
-  iconUrl: require('leaflet/dist/images/marker-icon.png'),
-  shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
-});
-
-const MapView = () => {
+const MapView = ({ categories = [] }) => {
   const { user } = useAuth();
   const [issues, setIssues] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [selectedIssue, setSelectedIssue] = useState(null);
   const [showIssueModal, setShowIssueModal] = useState(false);
-  const [mapCenter, setMapCenter] = useState([40.7128, -74.0060]); // Default to NYC
-  const [mapZoom, setMapZoom] = useState(10);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [filters, setFilters] = useState({});
+  const [mapType, setMapType] = useState('roadmap'); // roadmap, satellite, hybrid, terrain
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [showClustering, setShowClustering] = useState(true);
+  const [mapBounds, setMapBounds] = useState(null);
+
+  const mapRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const markersRef = useRef([]);
+  const heatmapRef = useRef(null);
+  const markerClustererRef = useRef(null);
+  const infoWindowRef = useRef(null);
 
   useEffect(() => {
-    loadIssues();
-    getUserLocation();
+    if (mapRef.current && !mapInstanceRef.current) {
+      initializeMap();
+    }
   }, []);
 
-  const getUserLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setMapCenter([position.coords.latitude, position.coords.longitude]);
-          setMapZoom(13);
-        },
-        (error) => {
-          console.log('Could not get user location:', error);
-          // Keep default location
+  useEffect(() => {
+    if (mapInstanceRef.current) {
+      loadIssues();
+    }
+  }, [filters]);
+
+  const initializeMap = () => {
+    if (!window.google || !window.google.maps) {
+      setError('Google Maps not loaded');
+      return;
+    }
+
+    try {
+      // Default center (you can change this)
+      const defaultCenter = { lat: 40.7128, lng: -74.006 };
+
+      const map = new window.google.maps.Map(mapRef.current, {
+        center: defaultCenter,
+        zoom: 12,
+        mapTypeId: mapType,
+        fullscreenControl: true,
+        streetViewControl: true,
+        zoomControl: true,
+        mapTypeControl: true,
+      });
+
+      // Info window for markers
+      infoWindowRef.current = new window.google.maps.InfoWindow();
+
+      // Listen to bounds changes
+      map.addListener('idle', () => {
+        const bounds = map.getBounds();
+        if (bounds) {
+          const ne = bounds.getNorthEast();
+          const sw = bounds.getSouthWest();
+
+          setMapBounds({
+            neLat: ne.lat(),
+            neLng: ne.lng(),
+            swLat: sw.lat(),
+            swLng: sw.lng(),
+          });
         }
-      );
+      });
+
+      mapInstanceRef.current = map;
+      setLoading(false);
+
+      // Try to get user's location
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const userLocation = {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+            };
+            map.setCenter(userLocation);
+            map.setZoom(13);
+          },
+          (error) => {
+            console.log('Geolocation error:', error);
+          },
+        );
+      }
+    } catch (err) {
+      console.error('Map initialization error:', err);
+      setError('Failed to initialize map');
+      setLoading(false);
     }
   };
 
   const loadIssues = async () => {
+    if (!mapInstanceRef.current) return;
+
     try {
-      const response = await issueService.getIssues();
-      setIssues(response.data.issues);
-    } catch (error) {
+      setLoading(true);
+      setError('');
+
+      let response;
+
+      if (mapBounds) {
+        // Get issues within map bounds
+        response = await issueService.getIssuesInBounds(mapBounds, filters);
+      } else {
+        // Get all issues with filters
+        response = await issueService.getIssues({ ...filters, limit: 1000 });
+      }
+
+      setIssues(response.data || []);
+      updateMarkers(response.data || []);
+    } catch (err) {
+      console.error('Load issues error:', err);
       setError('Failed to load issues');
-      console.error('Error loading issues:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'Reported': return '#ffc107';
-      case 'In Progress': return '#17a2b8';
-      case 'Resolved': return '#28a745';
-      default: return '#6c757d';
+  const updateMarkers = (issuesData) => {
+    if (!mapInstanceRef.current) return;
+
+    // Clear existing markers
+    clearMarkers();
+
+    // Create markers for each issue
+    const newMarkers = issuesData
+      .filter((issue) => issue.location?.coordinates)
+      .map((issue) => {
+        const [lng, lat] = issue.location.coordinates;
+
+        const marker = new window.google.maps.Marker({
+          position: { lat, lng },
+          map: showClustering ? null : mapInstanceRef.current,
+          title: issue.title,
+          icon: getMarkerIcon(issue),
+          animation: window.google.maps.Animation.DROP,
+        });
+
+        marker.addListener('click', () => {
+          handleMarkerClick(issue, marker);
+        });
+
+        return marker;
+      });
+
+    markersRef.current = newMarkers;
+
+    // Update clustering
+    if (showClustering && window.markerClusterer) {
+      updateClustering(newMarkers);
+    }
+
+    // Update heatmap
+    if (showHeatmap) {
+      updateHeatmap(issuesData);
     }
   };
 
-  const getPriorityColor = (priority) => {
-    switch (priority) {
-      case 'Low': return '#28a745';
-      case 'Medium': return '#ffc107';
-      case 'High': return '#fd7e14';
-      case 'Critical': return '#dc3545';
-      default: return '#6c757d';
+  const clearMarkers = () => {
+    // Remove all markers from map
+    markersRef.current.forEach((marker) => marker.setMap(null));
+    markersRef.current = [];
+
+    // Clear clusterer
+    if (markerClustererRef.current) {
+      markerClustererRef.current.clearMarkers();
+    }
+
+    // Clear heatmap
+    if (heatmapRef.current) {
+      heatmapRef.current.setMap(null);
     }
   };
 
-  const createCustomIcon = (status, priority) => {
-    const color = getStatusColor(status);
-    const priorityColor = getPriorityColor(priority);
-    
-    return L.divIcon({
-      className: 'custom-marker',
-      html: `
-        <div style="
-          background-color: ${color};
-          width: 30px;
-          height: 30px;
-          border-radius: 50%;
-          border: 3px solid ${priorityColor};
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-weight: bold;
-          font-size: 12px;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        ">
-          ${status === 'Reported' ? '!' : status === 'In Progress' ? '⚡' : '✓'}
+  const getMarkerIcon = (issue) => {
+    const colors = {
+      open: '#3b82f6',
+      'in-progress': '#f59e0b',
+      resolved: '#10b981',
+      closed: '#6b7280',
+      rejected: '#ef4444',
+    };
+
+    const color = colors[issue.status] || '#6b7280';
+
+    return {
+      path: window.google.maps.SymbolPath.CIRCLE,
+      fillColor: color,
+      fillOpacity: 0.9,
+      strokeColor: '#ffffff',
+      strokeWeight: 2,
+      scale:
+        issue.priority === 'urgent' ? 12 : issue.priority === 'high' ? 10 : 8,
+    };
+  };
+
+  const handleMarkerClick = (issue, marker) => {
+    // Show info window
+    const content = `
+      <div style="padding: 12px; max-width: 250px;">
+        <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 700; color: #1f2937;">
+          ${issue.title}
+        </h3>
+        <p style="margin: 0 0 8px 0; font-size: 14px; color: #4b5563; line-height: 1.4;">
+          ${issue.description.substring(0, 100)}${
+      issue.description.length > 100 ? '...' : ''
+    }
+        </p>
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+          <span style="padding: 4px 8px; background: #dbeafe; color: #1e40af; border-radius: 4px; font-size: 12px; font-weight: 600;">
+            ${issue.status}
+          </span>
+          <span style="padding: 4px 8px; background: #fee2e2; color: #991b1b; border-radius: 4px; font-size: 12px; font-weight: 600;">
+            ${issue.priority}
+          </span>
         </div>
-      `,
-      iconSize: [30, 30],
-      iconAnchor: [15, 15],
-      popupAnchor: [0, -15]
+        <button 
+          onclick="window.viewIssueDetails('${issue._id}')"
+          style="width: 100%; padding: 8px; background: #667eea; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;"
+        >
+          View Details
+        </button>
+      </div>
+    `;
+
+    infoWindowRef.current.setContent(content);
+    infoWindowRef.current.open(mapInstanceRef.current, marker);
+  };
+
+  // Global function for info window button
+  useEffect(() => {
+    window.viewIssueDetails = (issueId) => {
+      const issue = issues.find((i) => i._id === issueId);
+      if (issue) {
+        setSelectedIssue(issue);
+        setShowIssueModal(true);
+      }
+    };
+
+    return () => {
+      delete window.viewIssueDetails;
+    };
+  }, [issues]);
+
+  const updateClustering = (markers) => {
+    if (!window.markerClusterer) {
+      console.warn('Marker Clusterer not loaded');
+      return;
+    }
+
+    if (markerClustererRef.current) {
+      markerClustererRef.current.clearMarkers();
+    }
+
+    markerClustererRef.current = new window.markerClusterer.MarkerClusterer({
+      map: mapInstanceRef.current,
+      markers: markers,
     });
   };
 
-  const handleMarkerClick = (issue) => {
-    setSelectedIssue(issue);
-    setShowIssueModal(true);
+  const updateHeatmap = (issuesData) => {
+    if (!window.google?.maps?.visualization) {
+      console.warn('Heatmap library not loaded');
+      return;
+    }
+
+    const heatmapData = issuesData
+      .filter((issue) => issue.location?.coordinates)
+      .map((issue) => {
+        const [lng, lat] = issue.location.coordinates;
+        const weight =
+          issue.priority === 'urgent' ? 3 : issue.priority === 'high' ? 2 : 1;
+
+        return {
+          location: new window.google.maps.LatLng(lat, lng),
+          weight: weight,
+        };
+      });
+
+    if (heatmapRef.current) {
+      heatmapRef.current.setMap(null);
+    }
+
+    heatmapRef.current = new window.google.maps.visualization.HeatmapLayer({
+      data: heatmapData,
+      map: mapInstanceRef.current,
+      radius: 30,
+      opacity: 0.6,
+    });
   };
 
-  const handleStatusUpdate = async (issueId, newStatus) => {
-    try {
-      await issueService.updateIssue(issueId, { status: newStatus });
-      setError('');
-      setSuccess('Issue status updated successfully');
-      setTimeout(() => setSuccess(''), 2500);
-      // Reload issues to reflect the change
-      loadIssues();
-      setShowIssueModal(false);
-    } catch (error) {
-      setError(error.response?.data?.message || 'Failed to update status');
+  const toggleMapType = (type) => {
+    setMapType(type);
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.setMapTypeId(type);
     }
   };
 
-  const IssueModal = ({ issue, isOpen, onClose, onStatusUpdate }) => {
-    if (!isOpen || !issue) return null;
+  const toggleHeatmap = () => {
+    const newShowHeatmap = !showHeatmap;
+    setShowHeatmap(newShowHeatmap);
 
-    return (
-      <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000
-      }}>
-        <div style={{
-          backgroundColor: 'white',
-          padding: '2rem',
-          borderRadius: '8px',
-          maxWidth: '500px',
-          width: '90%',
-          maxHeight: '80vh',
-          overflow: 'auto'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <h3>{issue.title}</h3>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer' }}>×</button>
-          </div>
-
-          <div style={{ marginBottom: '1rem' }}>
-            <p><strong>Description:</strong> {issue.description}</p>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-            <div>
-              <strong>Category:</strong> {issue.category?.name}
-            </div>
-            <div>
-              <strong>Priority:</strong> 
-              <span style={{
-                padding: '0.25rem 0.5rem',
-                borderRadius: '4px',
-                backgroundColor: getPriorityColor(issue.priority),
-                color: 'white',
-                fontSize: '0.8rem',
-                marginLeft: '0.5rem'
-              }}>
-                {issue.priority}
-              </span>
-            </div>
-            <div>
-              <strong>Status:</strong>
-              <span style={{
-                padding: '0.25rem 0.5rem',
-                borderRadius: '4px',
-                backgroundColor: getStatusColor(issue.status),
-                color: 'white',
-                fontSize: '0.8rem',
-                marginLeft: '0.5rem'
-              }}>
-                {issue.status}
-              </span>
-            </div>
-            <div>
-              <strong>Created by:</strong> {issue.createdBy?.name}
-            </div>
-            <div>
-              <strong>Created:</strong> {new Date(issue.createdAt).toLocaleDateString()}
-            </div>
-            <div>
-              <strong>Location:</strong> {issue.location?.latitude.toFixed(4)}, {issue.location?.longitude.toFixed(4)}
-            </div>
-          </div>
-
-          {issue.photoURL && (
-            <div style={{ marginBottom: '1rem' }}>
-              <img 
-                src={issue.photoURL} 
-                alt="Issue photo" 
-                style={{ 
-                  maxWidth: '100%', 
-                  maxHeight: '200px', 
-                  objectFit: 'cover', 
-                  borderRadius: '4px' 
-                }}
-              />
-            </div>
-          )}
-
-          {(user?.role === 'authority' || user?.role === 'admin') && (
-            <div style={{ marginTop: '1rem' }}>
-              <label><strong>Update Status:</strong></label>
-              <select
-                value={issue.status}
-                onChange={(e) => onStatusUpdate(issue._id, e.target.value)}
-                style={{ 
-                  width: '100%', 
-                  padding: '0.5rem', 
-                  marginTop: '0.5rem',
-                  borderRadius: '4px',
-                  border: '1px solid #ccc'
-                }}
-              >
-                <option value="Reported">Reported</option>
-                <option value="In Progress">In Progress</option>
-                <option value="Resolved">Resolved</option>
-              </select>
-            </div>
-          )}
-
-          <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem' }}>
-            <button 
-              onClick={onClose}
-              style={{
-                padding: '0.5rem 1rem',
-                backgroundColor: '#6c757d',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer'
-              }}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+    if (newShowHeatmap) {
+      updateHeatmap(issues);
+      // Hide markers when showing heatmap
+      markersRef.current.forEach((marker) => marker.setMap(null));
+      if (markerClustererRef.current) {
+        markerClustererRef.current.clearMarkers();
+      }
+    } else {
+      // Show markers when hiding heatmap
+      if (heatmapRef.current) {
+        heatmapRef.current.setMap(null);
+      }
+      updateMarkers(issues);
+    }
   };
 
-  if (loading) {
-    return (
-      <div className="container">
-        <div className="card text-center">
-          <h2>Loading map...</h2>
-        </div>
-      </div>
-    );
-  }
+  const toggleClustering = () => {
+    const newShowClustering = !showClustering;
+    setShowClustering(newShowClustering);
+
+    if (newShowClustering) {
+      updateClustering(markersRef.current);
+    } else {
+      if (markerClustererRef.current) {
+        markerClustererRef.current.clearMarkers();
+      }
+      markersRef.current.forEach((marker) =>
+        marker.setMap(mapInstanceRef.current),
+      );
+    }
+  };
+
+  const handleFiltersChange = (newFilters) => {
+    setFilters(newFilters);
+  };
+
+  const handleIssueUpdate = () => {
+    loadIssues();
+    setShowIssueModal(false);
+  };
+
+  const getStatusColor = (status) => {
+    const colors = {
+      open: '#3b82f6',
+      'in-progress': '#f59e0b',
+      resolved: '#10b981',
+      closed: '#6b7280',
+      rejected: '#ef4444',
+    };
+    return colors[status] || '#6b7280';
+  };
 
   return (
-    <div className="container">
-      <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h1>Issues Map View</h1>
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <div style={{ width: '12px', height: '12px', backgroundColor: '#ffc107', borderRadius: '50%' }}></div>
-                <span style={{ fontSize: '0.9rem' }}>Reported</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <div style={{ width: '12px', height: '12px', backgroundColor: '#17a2b8', borderRadius: '50%' }}></div>
-                <span style={{ fontSize: '0.9rem' }}>In Progress</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <div style={{ width: '12px', height: '12px', backgroundColor: '#28a745', borderRadius: '50%' }}></div>
-                <span style={{ fontSize: '0.9rem' }}>Resolved</span>
-              </div>
-            </div>
-            <button 
-              onClick={loadIssues}
-              className="btn btn-secondary"
-              style={{ fontSize: '0.9rem' }}
-            >
-              Refresh
-            </button>
-          </div>
-        </div>
+    <div className="map-view">
+      {/* Map Controls */}
+      <div className="map-controls">
+        <IssueFilters
+          categories={categories}
+          onFiltersChange={handleFiltersChange}
+          showUserFilters={!!user}
+        />
 
-        {error && (
-          <div className="alert alert-danger">
-            {error}
-          </div>
-        )}
-        {success && (
-          <div className="alert alert-success">
-            {success}
-          </div>
-        )}
-
-        <div style={{ height: '600px', width: '100%', borderRadius: '8px', overflow: 'hidden' }}>
-          <MapContainer
-            center={mapCenter}
-            zoom={mapZoom}
-            style={{ height: '100%', width: '100%' }}
-          >
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-            
-            {issues.map(issue => (
-              <Marker
-                key={issue._id}
-                position={[issue.location.latitude, issue.location.longitude]}
-                icon={createCustomIcon(issue.status, issue.priority)}
-                eventHandlers={{
-                  click: () => handleMarkerClick(issue)
-                }}
+        <div className="view-controls">
+          {/* Map Type Selector */}
+          <div className="control-group">
+            <label className="control-label">Map Type</label>
+            <div className="button-group">
+              <button
+                className={`control-btn ${
+                  mapType === 'roadmap' ? 'active' : ''
+                }`}
+                onClick={() => toggleMapType('roadmap')}
               >
-                <Popup>
-                  <div style={{ minWidth: '200px' }}>
-                    <h4 style={{ margin: '0 0 0.5rem 0' }}>{issue.title}</h4>
-                    <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>{issue.description}</p>
-                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                      <span style={{
-                        padding: '0.25rem 0.5rem',
-                        borderRadius: '4px',
-                        backgroundColor: getStatusColor(issue.status),
-                        color: 'white',
-                        fontSize: '0.8rem'
-                      }}>
-                        {issue.status}
-                      </span>
-                      <span style={{
-                        padding: '0.25rem 0.5rem',
-                        borderRadius: '4px',
-                        backgroundColor: getPriorityColor(issue.priority),
-                        color: 'white',
-                        fontSize: '0.8rem'
-                      }}>
-                        {issue.priority}
-                      </span>
-                    </div>
-                    <p style={{ margin: '0', fontSize: '0.8rem', color: '#666' }}>
-                      {issue.category?.name} • {new Date(issue.createdAt).toLocaleDateString()}
-                    </p>
-                    <button 
-                      onClick={() => handleMarkerClick(issue)}
-                      style={{
-                        marginTop: '0.5rem',
-                        padding: '0.25rem 0.5rem',
-                        backgroundColor: '#007bff',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '0.8rem'
-                      }}
-                    >
-                      View Details
-                    </button>
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
-          </MapContainer>
-        </div>
+                🗺️ Map
+              </button>
+              <button
+                className={`control-btn ${
+                  mapType === 'satellite' ? 'active' : ''
+                }`}
+                onClick={() => toggleMapType('satellite')}
+              >
+                🛰️ Satellite
+              </button>
+              <button
+                className={`control-btn ${
+                  mapType === 'terrain' ? 'active' : ''
+                }`}
+                onClick={() => toggleMapType('terrain')}
+              >
+                ⛰️ Terrain
+              </button>
+            </div>
+          </div>
 
-        <div style={{ marginTop: '1rem', textAlign: 'center', color: '#666' }}>
-          <p>Click on markers to view issue details. {user?.role === 'authority' || user?.role === 'admin' ? 'Authorities can update status directly from the map.' : ''}</p>
+          {/* View Options */}
+          <div className="control-group">
+            <label className="control-label">View Options</label>
+            <div className="button-group">
+              <button
+                className={`control-btn ${showHeatmap ? 'active' : ''}`}
+                onClick={toggleHeatmap}
+              >
+                🔥 Heatmap
+              </button>
+              <button
+                className={`control-btn ${showClustering ? 'active' : ''}`}
+                onClick={toggleClustering}
+                disabled={showHeatmap}
+              >
+                📍 Clustering
+              </button>
+            </div>
+          </div>
+
+          {/* Stats */}
+          <div className="map-stats">
+            <div className="stat-item">
+              <span className="stat-label">Total Issues</span>
+              <span className="stat-value">{issues.length}</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      <IssueModal
-        issue={selectedIssue}
-        isOpen={showIssueModal}
-        onClose={() => setShowIssueModal(false)}
-        onStatusUpdate={handleStatusUpdate}
-      />
+      {/* Map Container */}
+      <div className="map-container">
+        {loading && !mapInstanceRef.current && (
+          <div className="map-loading">
+            <div className="spinner"></div>
+            <p>Loading map...</p>
+          </div>
+        )}
+
+        {error && (
+          <div className="map-error">
+            <span className="error-icon">⚠</span>
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div ref={mapRef} className="map-canvas" />
+
+        {/* Legend */}
+        {!showHeatmap && (
+          <div className="map-legend">
+            <h4 className="legend-title">Status</h4>
+            <div className="legend-items">
+              {['open', 'in-progress', 'resolved', 'closed'].map((status) => (
+                <div key={status} className="legend-item">
+                  <span
+                    className="legend-color"
+                    style={{ backgroundColor: getStatusColor(status) }}
+                  />
+                  <span className="legend-label">{status}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Loading Overlay */}
+        {loading && mapInstanceRef.current && (
+          <div className="map-loading-overlay">
+            <div className="spinner-small"></div>
+            <span>Loading issues...</span>
+          </div>
+        )}
+      </div>
+
+      {/* Issue Detail Modal */}
+      {showIssueModal && selectedIssue && (
+        <IssueDetailModal
+          issue={selectedIssue}
+          isOpen={showIssueModal}
+          onClose={() => setShowIssueModal(false)}
+          onUpdate={handleIssueUpdate}
+        />
+      )}
     </div>
   );
 };

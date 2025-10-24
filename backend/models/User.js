@@ -89,7 +89,7 @@ userSchema.methods.comparePassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// Create geospatial index for location queries
-userSchema.index({ location: '2dsphere' });
+// Create regular indexes for location queries (not 2dsphere)
+userSchema.index({ 'location.latitude': 1, 'location.longitude': 1 });
 
 module.exports = mongoose.model('User', userSchema);

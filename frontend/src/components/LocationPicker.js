@@ -1,187 +1,341 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import './LocationPicker.css';
 
-const LocationPicker = ({ 
-  latitude, 
-  longitude, 
-  onLocationChange, 
-  onGeolocationSuccess,
-  onGeolocationError 
+const LocationPicker = ({
+  latitude,
+  longitude,
+  address,
+  onLocationChange,
+  disabled = false,
+  showMap = true,
+  height = '300px',
 }) => {
-  const [currentLocation, setCurrentLocation] = useState({
+  const [location, setLocation] = useState({
     lat: latitude ? parseFloat(latitude) : null,
-    lng: longitude ? parseFloat(longitude) : null
+    lng: longitude ? parseFloat(longitude) : null,
   });
-  const [isGettingLocation, setIsGettingLocation] = useState(false);
-  const [locationError, setLocationError] = useState('');
 
+  const [currentAddress, setCurrentAddress] = useState(address || '');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [mapReady, setMapReady] = useState(false);
+
+  const mapRef = useRef(null);
+  const markerRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+
+  // Initialize map when location is available
+  useEffect(() => {
+    if (location.lat && location.lng && showMap && !mapInstanceRef.current) {
+      initializeMap();
+    }
+  }, [location, showMap]);
+
+  // Update location when props change
   useEffect(() => {
     if (latitude && longitude) {
-      setCurrentLocation({ 
-        lat: parseFloat(latitude), 
-        lng: parseFloat(longitude) 
-      });
-    }
-  }, [latitude, longitude]);
+      const newLat = parseFloat(latitude);
+      const newLng = parseFloat(longitude);
 
-  const getCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      setLocationError('Geolocation is not supported by this browser.');
+      if (newLat !== location.lat || newLng !== location.lng) {
+        setLocation({ lat: newLat, lng: newLng });
+        updateMapLocation(newLat, newLng);
+      }
+    }
+
+    if (address && address !== currentAddress) {
+      setCurrentAddress(address);
+    }
+  }, [latitude, longitude, address]);
+
+  const initializeMap = () => {
+    // Check if Google Maps is loaded
+    if (!window.google || !window.google.maps) {
+      console.error('Google Maps not loaded');
+      setError('Map service not available');
       return;
     }
 
-    setIsGettingLocation(true);
-    setLocationError('');
+    try {
+      const map = new window.google.maps.Map(mapRef.current, {
+        center: { lat: location.lat, lng: location.lng },
+        zoom: 15,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: true,
+        zoomControl: true,
+      });
+
+      const marker = new window.google.maps.Marker({
+        position: { lat: location.lat, lng: location.lng },
+        map: map,
+        draggable: !disabled,
+        title: 'Issue Location',
+      });
+
+      // Handle marker drag
+      if (!disabled) {
+        marker.addListener('dragend', (event) => {
+          const newLat = event.latLng.lat();
+          const newLng = event.latLng.lng();
+          handleLocationUpdate(newLat, newLng);
+        });
+
+        // Handle map click
+        map.addListener('click', (event) => {
+          const newLat = event.latLng.lat();
+          const newLng = event.latLng.lng();
+          marker.setPosition({ lat: newLat, lng: newLng });
+          handleLocationUpdate(newLat, newLng);
+        });
+      }
+
+      mapInstanceRef.current = map;
+      markerRef.current = marker;
+      setMapReady(true);
+      setError('');
+    } catch (err) {
+      console.error('Map initialization error:', err);
+      setError('Failed to initialize map');
+    }
+  };
+
+  const updateMapLocation = (lat, lng) => {
+    if (mapInstanceRef.current && markerRef.current) {
+      const position = { lat, lng };
+      mapInstanceRef.current.setCenter(position);
+      markerRef.current.setPosition(position);
+    }
+  };
+
+  const handleLocationUpdate = (lat, lng) => {
+    setLocation({ lat, lng });
+
+    // Reverse geocode to get address
+    reverseGeocode(lat, lng);
+
+    // Notify parent
+    if (onLocationChange) {
+      onLocationChange({
+        latitude: lat,
+        longitude: lng,
+        address: currentAddress,
+      });
+    }
+  };
+
+  const reverseGeocode = async (lat, lng) => {
+    if (!window.google || !window.google.maps) return;
+
+    const geocoder = new window.google.maps.Geocoder();
+    const latlng = { lat, lng };
+
+    try {
+      geocoder.geocode({ location: latlng }, (results, status) => {
+        if (status === 'OK' && results[0]) {
+          const address = results[0].formatted_address;
+          setCurrentAddress(address);
+
+          if (onLocationChange) {
+            onLocationChange({
+              latitude: lat,
+              longitude: lng,
+              address: address,
+            });
+          }
+        }
+      });
+    } catch (err) {
+      console.error('Geocoding error:', err);
+    }
+  };
+
+  const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported by your browser');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const { latitude, longitude } = position.coords;
-        const newLocation = { lat: latitude, lng: longitude };
-        
-        setCurrentLocation(newLocation);
-        onLocationChange && onLocationChange(latitude, longitude);
-        onGeolocationSuccess && onGeolocationSuccess(newLocation);
-        setIsGettingLocation(false);
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+
+        setLocation({ lat, lng });
+        handleLocationUpdate(lat, lng);
+        updateMapLocation(lat, lng);
+        setLoading(false);
       },
       (error) => {
-        let errorMessage = 'Unable to retrieve your location. ';
+        console.error('Geolocation error:', error);
+        let errorMessage = 'Unable to get your location';
+
         switch (error.code) {
           case error.PERMISSION_DENIED:
-            errorMessage += 'Please allow location access and try again.';
+            errorMessage = 'Location permission denied';
             break;
           case error.POSITION_UNAVAILABLE:
-            errorMessage += 'Location information is unavailable.';
+            errorMessage = 'Location information unavailable';
             break;
           case error.TIMEOUT:
-            errorMessage += 'Location request timed out.';
+            errorMessage = 'Location request timed out';
             break;
           default:
-            errorMessage += 'An unknown error occurred.';
-            break;
+            errorMessage = 'An unknown error occurred';
         }
-        setLocationError(errorMessage);
-        onGeolocationError && onGeolocationError(error);
-        setIsGettingLocation(false);
+
+        setError(errorMessage);
+        setLoading(false);
       },
       {
         enableHighAccuracy: true,
         timeout: 10000,
-        maximumAge: 300000 // 5 minutes
-      }
+        maximumAge: 0,
+      },
     );
   };
 
-  const handleManualInput = (e) => {
-    const { name, value } = e.target;
-    const numValue = value ? parseFloat(value) : null;
+  const handleCoordinateChange = (field, value) => {
+    const numValue = parseFloat(value);
+
+    if (isNaN(numValue)) return;
+
     const newLocation = {
-      ...currentLocation,
-      [name === 'latitude' ? 'lat' : 'lng']: numValue
+      ...location,
+      [field]: numValue,
     };
-    
-    setCurrentLocation(newLocation);
-    
+
+    setLocation(newLocation);
+
     if (newLocation.lat && newLocation.lng) {
-      onLocationChange && onLocationChange(newLocation.lat, newLocation.lng);
+      handleLocationUpdate(newLocation.lat, newLocation.lng);
+      updateMapLocation(newLocation.lat, newLocation.lng);
     }
   };
 
-  const openInMaps = () => {
-    if (currentLocation.lat && currentLocation.lng) {
-      const url = `https://www.google.com/maps?q=${currentLocation.lat},${currentLocation.lng}`;
-      window.open(url, '_blank');
-    }
+  const isValidLocation = () => {
+    return (
+      location.lat !== null &&
+      location.lng !== null &&
+      !isNaN(location.lat) &&
+      !isNaN(location.lng) &&
+      location.lat >= -90 &&
+      location.lat <= 90 &&
+      location.lng >= -180 &&
+      location.lng <= 180
+    );
   };
 
   return (
-    <div style={{ marginBottom: '1rem' }}>
-      <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
-        Location
-      </label>
-      
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+    <div className="location-picker">
+      {/* Current Location Button */}
+      <div className="location-actions">
         <button
           type="button"
+          className="btn-current-location"
           onClick={getCurrentLocation}
-          disabled={isGettingLocation}
-          className="btn btn-secondary"
-          style={{ flex: '1' }}
+          disabled={disabled || loading}
         >
-          {isGettingLocation ? 'Getting Location...' : '📍 Use Current Location'}
+          <span className="location-icon">📍</span>
+          <span>
+            {loading ? 'Getting Location...' : 'Use Current Location'}
+          </span>
         </button>
-        
-        {currentLocation.lat && currentLocation.lng && (
-          <button
-            type="button"
-            onClick={openInMaps}
-            className="btn btn-secondary"
-            style={{ flex: '1' }}
-          >
-            🗺️ View on Map
-          </button>
+
+        {isValidLocation() && (
+          <div className="location-status">
+            <span className="status-icon">✓</span>
+            <span className="status-text">Location set</span>
+          </div>
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-        <div>
-          <label htmlFor="latitude" style={{ fontSize: '0.9rem', color: '#666' }}>
+      {/* Error Message */}
+      {error && (
+        <div className="location-error">
+          <span className="error-icon">⚠</span>
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* Coordinates Input */}
+      <div className="coordinates-input">
+        <div className="coordinate-group">
+          <label htmlFor="latitude" className="coordinate-label">
             Latitude
           </label>
           <input
             type="number"
             id="latitude"
-            name="latitude"
-            className="form-control"
-            value={currentLocation.lat || ''}
-            onChange={handleManualInput}
             step="any"
+            min="-90"
+            max="90"
+            value={location.lat || ''}
+            onChange={(e) => handleCoordinateChange('lat', e.target.value)}
             placeholder="e.g., 40.7128"
-            style={{ fontSize: '0.9rem' }}
+            className="coordinate-input"
+            disabled={disabled}
+            required
           />
         </div>
-        
-        <div>
-          <label htmlFor="longitude" style={{ fontSize: '0.9rem', color: '#666' }}>
+
+        <div className="coordinate-group">
+          <label htmlFor="longitude" className="coordinate-label">
             Longitude
           </label>
           <input
             type="number"
             id="longitude"
-            name="longitude"
-            className="form-control"
-            value={currentLocation.lng || ''}
-            onChange={handleManualInput}
             step="any"
+            min="-180"
+            max="180"
+            value={location.lng || ''}
+            onChange={(e) => handleCoordinateChange('lng', e.target.value)}
             placeholder="e.g., -74.0060"
-            style={{ fontSize: '0.9rem' }}
+            className="coordinate-input"
+            disabled={disabled}
+            required
           />
         </div>
       </div>
 
-      {locationError && (
-        <div style={{ 
-          color: '#dc3545', 
-          fontSize: '0.8rem', 
-          marginTop: '0.5rem',
-          padding: '0.5rem',
-          backgroundColor: '#f8d7da',
-          border: '1px solid #f5c6cb',
-          borderRadius: '4px'
-        }}>
-          {locationError}
+      {/* Address Display */}
+      {currentAddress && (
+        <div className="address-display">
+          <label className="address-label">Address</label>
+          <div className="address-value">
+            <span className="address-icon">📌</span>
+            <span>{currentAddress}</span>
+          </div>
         </div>
       )}
 
-      {currentLocation.lat !== null && currentLocation.lng !== null && (
-        <div style={{ 
-          color: '#28a745', 
-          fontSize: '0.8rem', 
-          marginTop: '0.5rem',
-          padding: '0.5rem',
-          backgroundColor: '#d4edda',
-          border: '1px solid #c3e6cb',
-          borderRadius: '4px'
-        }}>
-          ✅ Location set: {Number(currentLocation.lat).toFixed(6)}, {Number(currentLocation.lng).toFixed(6)}
+      {/* Map */}
+      {showMap && isValidLocation() && (
+        <div className="map-container">
+          <div ref={mapRef} className="map-canvas" style={{ height }} />
+          {!mapReady && (
+            <div className="map-loading">
+              <div className="spinner"></div>
+              <p>Loading map...</p>
+            </div>
+          )}
+          {!disabled && (
+            <div className="map-hint">
+              <span className="hint-icon">💡</span>
+              <span>Click on the map or drag the marker to set location</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Loading Google Maps Script */}
+      {!window.google && showMap && (
+        <div className="map-loading">
+          <p>Loading map service...</p>
         </div>
       )}
     </div>

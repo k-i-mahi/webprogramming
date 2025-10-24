@@ -1,19 +1,112 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import '../styles/Home.css';
+import issueService from '../services/issueService';
+import categoryService from '../services/categoryService';
+import './Home.css';
 
 const Home = () => {
   const { isAuthenticated, user } = useAuth();
+  const navigate = useNavigate();
+  const [stats, setStats] = useState({
+    totalIssues: 0,
+    resolved: 0,
+    active: 0,
+    users: 0,
+  });
+  const [recentIssues, setRecentIssues] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadHomeData();
+  }, []);
+
+  const loadHomeData = async () => {
+    try {
+      // Fetch stats
+      const statsResponse = await issueService.getIssueStats();
+      setStats({
+        totalIssues: statsResponse.data.overall.total || 0,
+        resolved: statsResponse.data.overall.resolved || 0,
+        active:
+          statsResponse.data.overall.open +
+            statsResponse.data.overall.inProgress || 0,
+        users: 500, // Mock data - replace with actual user count API
+      });
+
+      // Fetch recent issues
+      const issuesResponse = await issueService.getIssues({
+        limit: 6,
+        sort: '-createdAt',
+      });
+      setRecentIssues(issuesResponse.data || []);
+
+      // Fetch categories
+      const categoriesResponse = await categoryService.getCategories({
+        limit: 8,
+      });
+      setCategories(categoriesResponse.data || []);
+    } catch (err) {
+      console.error('Load home data error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const features = [
+    {
+      icon: '📝',
+      title: 'Report Issues',
+      description: 'Easily report community issues with photos and location',
+      color: '#667eea',
+    },
+    {
+      icon: '🗺️',
+      title: 'Interactive Map',
+      description: 'View issues on an interactive map with real-time updates',
+      color: '#f59e0b',
+    },
+    {
+      icon: '📊',
+      title: 'Track Progress',
+      description: 'Monitor issue status and resolution progress',
+      color: '#10b981',
+    },
+    {
+      icon: '👥',
+      title: 'Community Driven',
+      description: 'Vote, comment, and follow issues that matter to you',
+      color: '#8b5cf6',
+    },
+  ];
+
+  const getTimeAgo = (date) => {
+    const seconds = Math.floor((new Date() - new Date(date)) / 1000);
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+  };
+
+  if (isAuthenticated) {
+    navigate('/dashboard');
+    return null;
+  }
 
   return (
     <div className="home-container">
       {/* Hero Section */}
       <section className="hero-section">
+        <div className="hero-background">
+          <div className="hero-gradient"></div>
+          <div className="hero-pattern"></div>
+        </div>
+
         <div className="hero-content">
           <div className="hero-badge">
-            <span>🎉</span>
-            <span>Welcome to the Future</span>
+            <span className="badge-icon">🎉</span>
+            <span className="badge-text">Making Communities Better</span>
           </div>
 
           <h1 className="hero-title">
@@ -21,65 +114,37 @@ const Home = () => {
           </h1>
 
           <p className="hero-subtitle">
-            A modern community management platform built with cutting-edge
-            technology. Connect, collaborate, and create meaningful change in
-            your community.
+            Empower your community with modern civic engagement. Report issues,
+            track progress, and make a real difference.
           </p>
 
-          <div className="hero-stats">
-            <div className="stat-item">
-              <div className="stat-number">500+</div>
-              <div className="stat-label">Active Users</div>
-            </div>
-            <div className="stat-item">
-              <div className="stat-number">1000+</div>
-              <div className="stat-label">Issues Resolved</div>
-            </div>
-            <div className="stat-item">
-              <div className="stat-number">50+</div>
-              <div className="stat-label">Communities</div>
-            </div>
+          <div className="hero-actions">
+            <Link to="/register" className="btn btn-primary btn-large">
+              Get Started
+              <span className="btn-arrow">→</span>
+            </Link>
+            <Link to="/login" className="btn btn-outline btn-large">
+              Sign In
+            </Link>
           </div>
 
-          {isAuthenticated ? (
-            <div className="hero-actions">
-              <div className="welcome-message">
-                <span className="wave">👋</span>
-                <span>
-                  Welcome back, <strong>{user?.name}</strong>!
-                </span>
-              </div>
-              <div className="action-buttons">
-                <Link to="/dashboard" className="btn btn-primary btn-lg">
-                  <span>🏠</span>
-                  Go to Dashboard
-                </Link>
-                <Link to="/profile" className="btn btn-secondary btn-lg">
-                  <span>👤</span>
-                  View Profile
-                </Link>
-              </div>
+          {/* Stats */}
+          <div className="hero-stats">
+            <div className="stat-item">
+              <div className="stat-number">{stats.totalIssues}+</div>
+              <div className="stat-label">Issues Reported</div>
             </div>
-          ) : (
-            <div className="hero-actions">
-              <Link to="/register" className="btn btn-primary btn-lg">
-                <span>🚀</span>
-                Get Started Free
-              </Link>
-              <Link to="/login" className="btn btn-outline btn-lg">
-                <span>🔐</span>
-                Login
-              </Link>
+            <div className="stat-divider"></div>
+            <div className="stat-item">
+              <div className="stat-number">{stats.resolved}+</div>
+              <div className="stat-label">Issues Resolved</div>
             </div>
-          )}
-        </div>
-
-        {/* Animated Background Elements */}
-        <div className="hero-shapes">
-          <div className="shape shape-1"></div>
-          <div className="shape shape-2"></div>
-          <div className="shape shape-3"></div>
-          <div className="shape shape-4"></div>
+            <div className="stat-divider"></div>
+            <div className="stat-item">
+              <div className="stat-number">{stats.active}+</div>
+              <div className="stat-label">Active Now</div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -93,186 +158,157 @@ const Home = () => {
         </div>
 
         <div className="features-grid">
-          <div className="feature-card">
-            <div className="feature-icon">🎯</div>
-            <h3 className="feature-title">Report Issues</h3>
-            <p className="feature-description">
-              Easily report community issues with photos, location, and detailed
-              descriptions.
-            </p>
-          </div>
-
-          <div className="feature-card">
-            <div className="feature-icon">👥</div>
-            <h3 className="feature-title">Community Driven</h3>
-            <p className="feature-description">
-              Connect with neighbors and work together to solve local problems.
-            </p>
-          </div>
-
-          <div className="feature-card">
-            <div className="feature-icon">⚡</div>
-            <h3 className="feature-title">Fast Resolution</h3>
-            <p className="feature-description">
-              Track issue progress in real-time and get updates instantly.
-            </p>
-          </div>
-
-          <div className="feature-card">
-            <div className="feature-icon">🔒</div>
-            <h3 className="feature-title">Secure & Private</h3>
-            <p className="feature-description">
-              Your data is protected with enterprise-grade security measures.
-            </p>
-          </div>
-
-          <div className="feature-card">
-            <div className="feature-icon">📊</div>
-            <h3 className="feature-title">Analytics Dashboard</h3>
-            <p className="feature-description">
-              Visualize community trends and track improvement metrics.
-            </p>
-          </div>
-
-          <div className="feature-card">
-            <div className="feature-icon">🌍</div>
-            <h3 className="feature-title">Location-Based</h3>
-            <p className="feature-description">
-              Find and resolve issues based on geographical proximity.
-            </p>
-          </div>
+          {features.map((feature, index) => (
+            <div key={index} className="feature-card">
+              <div
+                className="feature-icon"
+                style={{ background: feature.color }}
+              >
+                {feature.icon}
+              </div>
+              <h3 className="feature-title">{feature.title}</h3>
+              <p className="feature-description">{feature.description}</p>
+            </div>
+          ))}
         </div>
       </section>
 
-      {/* How It Works Section */}
-      <section className="process-section">
-        <div className="section-header">
-          <h2 className="section-title">How It Works</h2>
-          <p className="section-subtitle">Get started in three simple steps</p>
-        </div>
-
-        <div className="process-steps">
-          <div className="step-card">
-            <div className="step-number">1</div>
-            <div className="step-content">
-              <h3 className="step-title">Sign Up</h3>
-              <p className="step-description">
-                Create your free account in seconds. No credit card required.
-              </p>
-            </div>
+      {/* Categories Section */}
+      {categories.length > 0 && (
+        <section className="categories-section">
+          <div className="section-header">
+            <h2 className="section-title">Popular Categories</h2>
+            <p className="section-subtitle">Browse issues by category</p>
           </div>
 
-          <div className="step-arrow">→</div>
-
-          <div className="step-card">
-            <div className="step-number">2</div>
-            <div className="step-content">
-              <h3 className="step-title">Report Issues</h3>
-              <p className="step-description">
-                Identify and report community issues with ease.
-              </p>
-            </div>
-          </div>
-
-          <div className="step-arrow">→</div>
-
-          <div className="step-card">
-            <div className="step-number">3</div>
-            <div className="step-content">
-              <h3 className="step-title">Track Progress</h3>
-              <p className="step-description">
-                Monitor resolution status and community impact.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Roles Section */}
-      <section className="roles-section">
-        <div className="section-header">
-          <h2 className="section-title">Multiple User Roles</h2>
-          <p className="section-subtitle">
-            Designed for everyone in the community
-          </p>
-        </div>
-
-        <div className="roles-grid">
-          <div className="role-card">
-            <div className="role-icon">👨‍👩‍👧‍👦</div>
-            <h3 className="role-title">Residents</h3>
-            <ul className="role-features">
-              <li>✓ Report community issues</li>
-              <li>✓ Track issue status</li>
-              <li>✓ Add comments and updates</li>
-              <li>✓ View community activity</li>
-            </ul>
-          </div>
-
-          <div className="role-card role-card-primary">
-            <div className="role-badge">Most Popular</div>
-            <div className="role-icon">🏛️</div>
-            <h3 className="role-title">Authority</h3>
-            <ul className="role-features">
-              <li>✓ Manage assigned issues</li>
-              <li>✓ Update resolution status</li>
-              <li>✓ Communicate with residents</li>
-              <li>✓ Access analytics</li>
-            </ul>
-          </div>
-
-          <div className="role-card">
-            <div className="role-icon">👑</div>
-            <h3 className="role-title">Admin</h3>
-            <ul className="role-features">
-              <li>✓ Full system access</li>
-              <li>✓ Assign issues to authorities</li>
-              <li>✓ Manage users and roles</li>
-              <li>✓ Generate reports</li>
-            </ul>
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      {!isAuthenticated && (
-        <section className="cta-section">
-          <div className="cta-content">
-            <h2 className="cta-title">Ready to Get Started?</h2>
-            <p className="cta-subtitle">
-              Join thousands of communities already using Civita
-            </p>
-            <div className="cta-buttons">
-              <Link to="/register" className="btn btn-primary btn-lg">
-                Sign Up Now
+          <div className="categories-grid">
+            {categories.map((category) => (
+              <Link
+                key={category._id}
+                to={`/issues?category=${category._id}`}
+                className="category-card"
+              >
+                <span className="category-icon">{category.icon}</span>
+                <span className="category-name">{category.displayName}</span>
+                <span className="category-count">
+                  {category.metadata?.issueCount || 0} issues
+                </span>
               </Link>
-              <Link to="/login" className="btn btn-outline btn-lg">
-                Learn More
-              </Link>
-            </div>
+            ))}
           </div>
         </section>
       )}
 
+      {/* Recent Issues Section */}
+      {recentIssues.length > 0 && (
+        <section className="recent-section">
+          <div className="section-header">
+            <h2 className="section-title">Recent Issues</h2>
+            <p className="section-subtitle">
+              See what's happening in your community
+            </p>
+          </div>
+
+          <div className="issues-grid">
+            {recentIssues.map((issue) => (
+              <div key={issue._id} className="issue-card">
+                {issue.images && issue.images.length > 0 && (
+                  <div className="issue-image">
+                    <img src={issue.images[0].url} alt={issue.title} />
+                  </div>
+                )}
+
+                <div className="issue-content">
+                  <div className="issue-badges">
+                    <span className={`status-badge status-${issue.status}`}>
+                      {issue.status}
+                    </span>
+                    <span
+                      className={`priority-badge priority-${issue.priority}`}
+                    >
+                      {issue.priority}
+                    </span>
+                  </div>
+
+                  <h3 className="issue-title">{issue.title}</h3>
+
+                  <p className="issue-description">
+                    {issue.description.substring(0, 80)}...
+                  </p>
+
+                  <div className="issue-footer">
+                    <div className="issue-meta">
+                      <span className="issue-category">
+                        {issue.category?.icon} {issue.category?.displayName}
+                      </span>
+                    </div>
+                    <span className="issue-time">
+                      {getTimeAgo(issue.createdAt)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="section-actions">
+            <Link to="/register" className="btn btn-primary">
+              Join to See More →
+            </Link>
+          </div>
+        </section>
+      )}
+
+      {/* CTA Section */}
+      <section className="cta-section">
+        <div className="cta-content">
+          <h2 className="cta-title">Ready to Make a Difference?</h2>
+          <p className="cta-subtitle">
+            Join thousands of community members making their neighborhoods
+            better
+          </p>
+          <div className="cta-actions">
+            <Link to="/register" className="btn btn-primary btn-large">
+              Create Free Account
+            </Link>
+            <Link to="/about" className="btn btn-outline btn-large">
+              Learn More
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* Footer */}
       <footer className="home-footer">
         <div className="footer-content">
-          <div className="footer-section">
-            <h4>Civita</h4>
-            <p>Building better communities together.</p>
+          <div className="footer-brand">
+            <h3>🏙️ Civita</h3>
+            <p>Making communities better, one issue at a time.</p>
           </div>
-          <div className="footer-section">
-            <h4>Quick Links</h4>
-            <Link to="/about">About</Link>
-            <Link to="/features">Features</Link>
-            <Link to="/contact">Contact</Link>
-          </div>
-          <div className="footer-section">
-            <h4>Legal</h4>
-            <Link to="/privacy">Privacy Policy</Link>
-            <Link to="/terms">Terms of Service</Link>
+
+          <div className="footer-links">
+            <div className="footer-column">
+              <h4>Product</h4>
+              <Link to="/features">Features</Link>
+              <Link to="/pricing">Pricing</Link>
+              <Link to="/about">About</Link>
+            </div>
+
+            <div className="footer-column">
+              <h4>Support</h4>
+              <Link to="/help">Help Center</Link>
+              <Link to="/contact">Contact</Link>
+              <Link to="/faq">FAQ</Link>
+            </div>
+
+            <div className="footer-column">
+              <h4>Legal</h4>
+              <Link to="/privacy">Privacy</Link>
+              <Link to="/terms">Terms</Link>
+            </div>
           </div>
         </div>
+
         <div className="footer-bottom">
           <p>&copy; 2024 Civita. All rights reserved.</p>
         </div>

@@ -1,4 +1,10 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, {
+  createContext,
+  useState,
+  useEffect,
+  useContext,
+  useCallback,
+} from 'react';
 import authService from '../services/authService';
 
 const AuthContext = createContext();
@@ -6,7 +12,7 @@ const AuthContext = createContext();
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error('useAuth must be used within AuthProvider');
   }
   return context;
 };
@@ -14,152 +20,278 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [initialized, setInitialized] = useState(false);
 
-  // Load user from localStorage on mount
-  useEffect(() => {
-    const loadUser = async () => {
-      const token = localStorage.getItem('token');
-      const storedUser = localStorage.getItem('user');
-
-      if (token && storedUser) {
-        try {
-          const parsedUser = JSON.parse(storedUser);
-          setUser(parsedUser);
-          setIsAuthenticated(true);
-        } catch (err) {
-          console.error('Failed to parse stored user:', err);
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-        }
-      }
-      setLoading(false);
-    };
-
-    loadUser();
+  // Logout user - defined early to avoid dependency issues
+  const logout = useCallback(async () => {
+    try {
+      // Optional: Call logout endpoint
+      await authService.logout();
+    } catch (err) {
+      console.error('Logout error:', err);
+    } finally {
+      // Clear local state
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      setUser(null);
+      setIsAuthenticated(false);
+      setError(null);
+    }
   }, []);
 
-  // Register function
+  // Initialize auth state from localStorage
+  useEffect(() => {
+    const initAuth = async () => {
+      const token = localStorage.getItem('token');
+
+      if (token) {
+        try {
+          // Verify token and get user
+          const response = await authService.getCurrentUser();
+          setUser(response.user);
+          setIsAuthenticated(true);
+        } catch (err) {
+          console.error('Auth initialization error:', err);
+          // Token invalid or expired - clear everything
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          setUser(null);
+          setIsAuthenticated(false);
+        }
+      }
+
+      setLoading(false);
+      setInitialized(true);
+    };
+
+    initAuth();
+  }, []);
+
+  // Register new user
   const register = async (userData) => {
     try {
+      setLoading(true);
       setError(null);
-      const res = await authService.register(userData);
-      const { token, ...user } = res.data;
 
+      const response = await authService.register(userData);
+      const { token, user } = response;
+
+      // Store token
+      localStorage.setItem('token', token);
+
+      // Update state
       setUser(user);
       setIsAuthenticated(true);
 
-      localStorage.setItem('user', JSON.stringify(user));
-      localStorage.setItem('token', token);
-
       return { success: true, user };
     } catch (err) {
-      const errorMessage =
-        err.response?.data?.message ||
-        err.response?.data?.errors?.[0]?.msg ||
-        'Registration failed';
-
+      const errorMessage = err.response?.data?.message || 'Registration failed';
       setError(errorMessage);
-      setIsAuthenticated(false);
       throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Login function
+  // Login user
   const login = async (email, password) => {
     try {
+      setLoading(true);
       setError(null);
-      const res = await authService.login({ email, password });
-      const { token, ...user } = res.data;
 
+      const response = await authService.login({ email, password });
+      const { token, user } = response;
+
+      // Store token
+      localStorage.setItem('token', token);
+
+      // Update state
       setUser(user);
       setIsAuthenticated(true);
 
-      localStorage.setItem('user', JSON.stringify(user));
-      localStorage.setItem('token', token);
-
       return { success: true, user };
     } catch (err) {
-      const errorMessage =
-        err.response?.data?.message ||
-        err.response?.data?.errors?.[0]?.msg ||
-        'Login failed';
-
+      const errorMessage = err.response?.data?.message || 'Login failed';
       setError(errorMessage);
-      setIsAuthenticated(false);
       throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
     }
-  };
-
-  // Logout function
-  const logout = () => {
-    setUser(null);
-    setIsAuthenticated(false);
-    setError(null);
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
   };
 
   // Update user profile
-  const updateUser = async (userId, updateData) => {
+  const updateUser = async (updates) => {
     try {
+      setLoading(true);
       setError(null);
-      const res = await authService.updateUser(userId, updateData);
-      const updatedUser = res.data;
 
-      setUser(updatedUser);
-      localStorage.setItem('user', JSON.stringify(updatedUser));
+      const response = await authService.updateProfile(updates);
 
-      return { success: true, user: updatedUser };
+      setUser(response.user);
+
+      return { success: true, user: response.user };
     } catch (err) {
       const errorMessage = err.response?.data?.message || 'Update failed';
-
       setError(errorMessage);
       throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Get current user from server
-  const getCurrentUser = async () => {
+  // Get current user (refresh user data)
+  const getCurrentUser = useCallback(async () => {
     try {
-      const res = await authService.getCurrentUser();
-      const currentUser = res.data;
-
-      setUser(currentUser);
-      setIsAuthenticated(true);
-      localStorage.setItem('user', JSON.stringify(currentUser));
-
-      return currentUser;
+      const response = await authService.getCurrentUser();
+      setUser(response.user);
+      return response.user;
     } catch (err) {
-      logout();
+      console.error('Get current user error:', err);
+      // Token might be expired
+      await logout();
+      throw err;
+    }
+  }, [logout]);
+
+  // Change password
+  const changePassword = async (currentPassword, newPassword) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      await authService.changePassword({ currentPassword, newPassword });
+
+      return { success: true };
+    } catch (err) {
+      const errorMessage =
+        err.response?.data?.message || 'Password change failed';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Refresh token
+  const refreshToken = useCallback(async () => {
+    try {
+      const response = await authService.refreshToken();
+      const { token } = response;
+
+      if (token) {
+        localStorage.setItem('token', token);
+        return { success: true };
+      }
+    } catch (err) {
+      console.error('Token refresh error:', err);
+      await logout();
+      throw err;
+    }
+  }, [logout]);
+
+  // Check if user has role
+  const hasRole = useCallback(
+    (roles) => {
+      if (!user) return false;
+      if (typeof roles === 'string') {
+        return user.role === roles;
+      }
+      return roles.includes(user.role);
+    },
+    [user],
+  );
+
+  // Check if user is admin
+  const isAdmin = useCallback(() => {
+    return user?.role === 'admin';
+  }, [user]);
+
+  // Check if user is authority
+  const isAuthority = useCallback(() => {
+    return user?.role === 'authority' || user?.role === 'admin';
+  }, [user]);
+
+  // Clear error
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+
+  // Get user statistics
+  const getUserStats = async () => {
+    try {
+      const response = await authService.getUserStats();
+      return response.data;
+    } catch (err) {
+      console.error('Get user stats error:', err);
       throw err;
     }
   };
 
-  // Clear error
-  const clearError = () => {
-    setError(null);
-  };
-
   const value = {
+    // State
     user,
     isAuthenticated,
-    error,
     loading,
+    error,
+    initialized,
+
+    // Auth methods
     register,
     login,
     logout,
     updateUser,
     getCurrentUser,
+    changePassword,
+    refreshToken,
+
+    // Utility methods
+    hasRole,
+    isAdmin,
+    isAuthority,
     clearError,
+    getUserStats,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {!loading && children}
-    </AuthContext.Provider>
-  );
+  // Show loading only on initial load
+  if (!initialized) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: '100vh',
+          background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
+        }}
+      >
+        <div style={{ textAlign: 'center' }}>
+          <div
+            style={{
+              width: '60px',
+              height: '60px',
+              border: '5px solid #e5e7eb',
+              borderTopColor: '#667eea',
+              borderRadius: '50%',
+              animation: 'spin 0.8s linear infinite',
+              margin: '0 auto 16px',
+            }}
+          ></div>
+          <p style={{ fontSize: '18px', fontWeight: '600', color: '#4b5563' }}>
+            Loading...
+          </p>
+          <style>{`
+            @keyframes spin {
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
+        </div>
+      </div>
+    );
+  }
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export default AuthContext;
