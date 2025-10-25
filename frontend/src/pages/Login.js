@@ -82,25 +82,6 @@ const Login = () => {
     }
   };
 
-  const handleDemoLogin = async (role) => {
-    const demoCredentials = {
-      admin: { email: 'admin@civita.com', password: 'admin123' },
-      authority: { email: 'authority@civita.com', password: 'authority123' },
-      resident: { email: 'resident@civita.com', password: 'resident123' },
-    };
-
-    const creds = demoCredentials[role];
-    if (creds) {
-      setFormData(creds);
-      try {
-        await login(creds.email, creds.password);
-        success(`Logged in as ${role}!`);
-      } catch (err) {
-        showError('Demo login failed');
-      }
-    }
-  };
-
   return (
     <div className="auth-container">
       <div className="auth-wrapper">
@@ -119,41 +100,6 @@ const Login = () => {
               <p className="auth-subtitle">
                 Sign in to continue to your account
               </p>
-            </div>
-
-            {/* Demo Login Buttons */}
-            <div className="demo-login-section">
-              <p className="demo-label">Quick Demo Login:</p>
-              <div className="demo-buttons">
-                <button
-                  type="button"
-                  className="demo-btn demo-admin"
-                  onClick={() => handleDemoLogin('admin')}
-                  disabled={loading}
-                >
-                  👑 Admin
-                </button>
-                <button
-                  type="button"
-                  className="demo-btn demo-authority"
-                  onClick={() => handleDemoLogin('authority')}
-                  disabled={loading}
-                >
-                  🏛️ Authority
-                </button>
-                <button
-                  type="button"
-                  className="demo-btn demo-resident"
-                  onClick={() => handleDemoLogin('resident')}
-                  disabled={loading}
-                >
-                  👤 Resident
-                </button>
-              </div>
-            </div>
-
-            <div className="divider">
-              <span className="divider-text">or sign in with email</span>
             </div>
 
             {/* Error Alert */}
@@ -179,7 +125,6 @@ const Login = () => {
                   Email Address
                 </label>
                 <div className="input-wrapper">
-                  <span className="input-icon">📧</span>
                   <input
                     type="email"
                     id="email"
@@ -205,7 +150,6 @@ const Login = () => {
                   Password
                 </label>
                 <div className="input-wrapper">
-                  <span className="input-icon">🔒</span>
                   <input
                     type={showPassword ? 'text' : 'password'}
                     id="password"
@@ -224,6 +168,7 @@ const Login = () => {
                     className="password-toggle"
                     onClick={() => setShowPassword(!showPassword)}
                     disabled={loading}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
                     {showPassword ? '👁️' : '👁️‍🗨️'}
                   </button>

@@ -19,8 +19,14 @@
   padding: 40px;
   background: white;
   border-radius: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   margin-bottom: 24px;
+  border: 1px solid #f3f4f6;
+  transition: all 0.3s ease;
+}
+
+.profile-header:hover {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
 }
 
 .profile-header-content {
@@ -60,8 +66,9 @@
   background: white;
   padding: 8px;
   border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   margin-bottom: 24px;
+  border: 1px solid #f3f4f6;
 }
 
 .tab {
@@ -69,22 +76,36 @@
   padding: 14px 24px;
   background: transparent;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   color: #6b7280;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.tab::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  opacity: 0;
+  border-radius: 10px;
+  transition: opacity 0.3s;
 }
 
 .tab:hover {
-  background: #f3f4f6;
+  background: #f9fafb;
   color: #1f2937;
+  transform: translateY(-2px);
 }
 
 .tab.active {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+  transform: translateY(-2px);
 }
 
 /* Profile Content */

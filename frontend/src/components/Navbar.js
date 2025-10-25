@@ -143,74 +143,69 @@ const Navbar = () => {
               {/* Notification Bell */}
               <NotificationBell />
 
-              {/* User Menu */}
-              <div className="user-menu" ref={userMenuRef}>
+              {/* User Menu - FIXED */}
+              <div className="user-menu-container" ref={userMenuRef}>
                 <button
-                  className="user-menu-btn"
+                  className="user-menu-trigger"
                   onClick={() => setShowUserMenu(!showUserMenu)}
                   aria-label="User menu"
+                  aria-expanded={showUserMenu}
                 >
                   <Avatar
                     src={user?.avatar}
                     name={user?.name}
                     size="medium"
-                    online={true}
                   />
                   <span className="user-name hide-mobile">{user?.name}</span>
-                  <span className="dropdown-arrow">▼</span>
+                  <span className={`chevron ${showUserMenu ? 'open' : ''}`}>▼</span>
                 </button>
 
                 {showUserMenu && (
-                  <div className="user-dropdown">
-                    <div className="dropdown-header">
-                      <Avatar
-                        src={user?.avatar}
-                        name={user?.name}
-                        size="large"
-                      />
+                  <div className="user-menu-dropdown">
+                    <div className="user-menu-header">
                       <div className="user-info">
-                        <div className="user-info-name">{user?.name}</div>
-                        <div className="user-info-email">{user?.email}</div>
-                        <div className="user-info-role">
+                        <div className="user-name-large">{user?.name}</div>
+                        <div className="user-email">{user?.email}</div>
+                        <div className="role-badge">
                           {user?.role === 'admin' && '👑 Admin'}
                           {user?.role === 'authority' && '⚡ Authority'}
-                          {user?.role === 'citizen' && '👤 Citizen'}
+                          {user?.role === 'resident' && '👤 Resident'}
                         </div>
                       </div>
                     </div>
 
-                    <div className="dropdown-divider" />
+                    <div className="user-menu-divider" />
 
-                    <Link to="/dashboard" className="dropdown-item">
-                      <span className="dropdown-icon">📊</span>
+                    <Link to="/dashboard" className="user-menu-item">
+                      <span className="menu-icon">📊</span>
                       <span>Dashboard</span>
                     </Link>
 
-                    <Link to="/profile" className="dropdown-item">
-                      <span className="dropdown-icon">👤</span>
+                    <Link to="/profile" className="user-menu-item">
+                      <span className="menu-icon">👤</span>
                       <span>My Profile</span>
                     </Link>
 
-                    <Link to="/notifications" className="dropdown-item">
-                      <span className="dropdown-icon">🔔</span>
+                    <Link to="/notifications" className="user-menu-item">
+                      <span className="menu-icon">🔔</span>
                       <span>Notifications</span>
                     </Link>
 
-                    <Link to="/issues?reportedBy=me" className="dropdown-item">
-                      <span className="dropdown-icon">📝</span>
+                    <Link to="/issues?reportedBy=me" className="user-menu-item">
+                      <span className="menu-icon">📝</span>
                       <span>My Issues</span>
                     </Link>
 
                     {user?.role === 'admin' && (
                       <>
-                        <div className="dropdown-divider" />
+                        <div className="user-menu-divider" />
                         <div className="dropdown-section-title">Admin</div>
-                        <Link to="/categories" className="dropdown-item">
-                          <span className="dropdown-icon">📁</span>
+                        <Link to="/categories" className="user-menu-item">
+                          <span className="menu-icon">📁</span>
                           <span>Manage Categories</span>
                         </Link>
-                        <Link to="/analytics" className="dropdown-item">
-                          <span className="dropdown-icon">📈</span>
+                        <Link to="/analytics" className="user-menu-item">
+                          <span className="menu-icon">📈</span>
                           <span>Analytics</span>
                         </Link>
                       </>
@@ -218,21 +213,18 @@ const Navbar = () => {
 
                     {user?.role === 'authority' && (
                       <>
-                        <div className="dropdown-divider" />
-                        <Link to="/analytics" className="dropdown-item">
-                          <span className="dropdown-icon">📈</span>
+                        <div className="user-menu-divider" />
+                        <Link to="/analytics" className="user-menu-item">
+                          <span className="menu-icon">📈</span>
                           <span>Analytics</span>
                         </Link>
                       </>
                     )}
 
-                    <div className="dropdown-divider" />
+                    <div className="user-menu-divider" />
 
-                    <button
-                      onClick={handleLogout}
-                      className="dropdown-item logout"
-                    >
-                      <span className="dropdown-icon">🚪</span>
+                    <button onClick={handleLogout} className="user-menu-item logout">
+                      <span className="menu-icon">🚪</span>
                       <span>Logout</span>
                     </button>
                   </div>
