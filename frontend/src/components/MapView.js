@@ -1,16 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-// --- START FIX ---
-// import issueService from '../services/issueService'; // Incorrect service used previously
-import locationService from '../services/locationService'; // Correct service for bounds query
-// --- END FIX ---
+import locationService from '../services/locationService';
 import IssueDetailModal from './IssueDetailModal';
 import IssueFilters from './IssueFilters';
-import Feedback from './Feedback'; // Import Feedback component
+import Feedback from './Feedback';
 import './MapView.css';
 
-// Default center if geolocation fails or is denied (Khulna, Bangladesh)
-const DEFAULT_CENTER = { lat: 22.818, lng: 89.5539 };
+const DEFAULT_CENTER = [22.818, 89.5539];
 const DEFAULT_ZOOM = 12;
 
 const MapView = ({ categories = [] }) => {
@@ -18,254 +14,387 @@ const MapView = ({ categories = [] }) => {
   const [issues, setIssues] = useState([]);
   const [selectedIssue, setSelectedIssue] = useState(null);
   const [showIssueModal, setShowIssueModal] = useState(false);
-  const [loading, setLoading] = useState(true); // Initially true until map+data loads
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [filters, setFilters] = useState({});
-  const [mapType, setMapType] = useState('roadmap');
+  const [mapType, setMapType] = useState('standard');
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [showClustering, setShowClustering] = useState(true);
   const [mapBounds, setMapBounds] = useState(null);
   const [initialCenter, setInitialCenter] = useState(DEFAULT_CENTER);
+  const [mapInitialized, setMapInitialized] = useState(false);
 
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const markersRef = useRef([]);
-  const heatmapRef = useRef(null);
-  const markerClustererRef = useRef(null);
-  const infoWindowRef = useRef(null);
-  const idleListenerRef = useRef(null); // Ref to store the idle listener
+  const markerLayerRef = useRef(null);
+  const clusterGroupRef = useRef(null);
+  const heatLayerRef = useRef(null);
+  const tileLayerRef = useRef(null);
+  const initAttemptedRef = useRef(false);
 
-  // Check for Google Maps and required libraries
-  const checkGoogleMapsLibraries = useCallback(() => {
-    if (!window.google || !window.google.maps) {
-      setError(
-        'Google Maps API script not loaded. Map functionality is unavailable.',
-      );
-      setLoading(false);
+  // Check for Leaflet library
+  const checkLeafletLibrary = useCallback(() => {
+    console.log('🔍 Checking Leaflet availability...');
+    if (typeof window === 'undefined') {
+      console.error('❌ Window is undefined');
       return false;
     }
-    if (!window.markerClusterer && showClustering) {
-      console.warn('Marker Clusterer library not loaded. Clustering disabled.');
-      // Optionally disable clustering if library is missing
-      // setShowClustering(false);
+    if (!window.L) {
+      console.error('❌ Leaflet (window.L) is not available');
+      setError('Leaflet library not loaded. Please refresh the page.');
+      return false;
     }
-    if (!window.google.maps.visualization && showHeatmap) {
-      console.warn(
-        'Google Maps Visualization library not loaded. Heatmap disabled.',
-      );
-      // Optionally disable heatmap if library is missing
-      // setShowHeatmap(false);
-    }
+    console.log('✅ Leaflet is available:', window.L.version);
     return true;
-  }, [showClustering, showHeatmap]);
-
-  // Attempt to get user location for initial centering
-  useEffect(() => {
-    locationService
-      .getCurrentPosition()
-      .then((pos) => {
-        setInitialCenter({ lat: pos.latitude, lng: pos.longitude });
-        console.log(
-          '🗺️ Initial center set to user location:',
-          pos.latitude,
-          pos.longitude,
-        );
-      })
-      .catch((err) => {
-        console.warn(
-          'Could not get user location for initial map center:',
-          err.message,
-        );
-        // Keep default center
-      })
-      .finally(() => {
-        // Now try initializing the map
-        if (mapRef.current && !mapInstanceRef.current) {
-          initializeMap();
-        }
-      });
-    // Run only once on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fetch issues when filters change or map bounds change
-  useEffect(() => {
-    if (mapInstanceRef.current && mapBounds) {
-      loadIssues();
+  // Initialize map - FIXED: Removed mapBounds from dependencies
+  const initializeMap = useCallback(() => {
+    if (initAttemptedRef.current) {
+      console.log('⏭️ Map initialization already attempted');
+      return;
     }
-    // Depends on filters and mapBounds
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, mapBounds]);
 
-  const initializeMap = () => {
-    if (!checkGoogleMapsLibraries()) {
-      return; // Stop if required libraries are missing
+    initAttemptedRef.current = true;
+
+    if (!checkLeafletLibrary()) {
+      console.error('❌ Leaflet check failed during initialization');
+      return;
     }
+
     if (!mapRef.current) {
-      console.error('Map container ref is not available.');
+      console.error('❌ Map container ref is not available');
       setError('Map container not found.');
-      setLoading(false);
       return;
     }
 
     try {
-      console.log('🗺️ Initializing map with center:', initialCenter);
-      const map = new window.google.maps.Map(mapRef.current, {
+      console.log('🗺️ Initializing Leaflet map with center:', initialCenter);
+
+      // Remove existing map instance if any
+      if (mapInstanceRef.current) {
+        console.log('🔄 Removing existing map instance');
+        try {
+          mapInstanceRef.current.remove();
+        } catch (err) {
+          console.warn('Error removing old map instance:', err);
+        }
+        mapInstanceRef.current = null;
+      }
+
+      // Create map with error handling
+      const map = window.L.map(mapRef.current, {
         center: initialCenter,
         zoom: DEFAULT_ZOOM,
-        mapTypeId: mapType,
-        fullscreenControl: true,
-        streetViewControl: true,
         zoomControl: true,
-        mapTypeControl: true,
-        // Optional: Add map style customization here
+        attributionControl: true,
+        preferCanvas: true,
       });
 
-      infoWindowRef.current = new window.google.maps.InfoWindow();
+      console.log('✅ Map instance created');
 
-      // --- START FIX ---
-      // Add idle listener *once* after map is created
-      idleListenerRef.current = map.addListener('idle', () => {
-        // --- END FIX ---
-        const bounds = map.getBounds();
-        if (bounds) {
-          const ne = bounds.getNorthEast();
-          const sw = bounds.getSouthWest();
-          const newBounds = {
-            neLat: ne.lat(),
-            neLng: ne.lng(),
-            swLat: sw.lat(),
-            swLng: sw.lng(),
-          };
-          // Update bounds state only if they changed significantly to avoid rapid re-fetches
-          // (Simple check: compare stringified versions)
-          if (JSON.stringify(newBounds) !== JSON.stringify(mapBounds)) {
-            console.log('🗺️ Map bounds changed:', newBounds);
-            setMapBounds(newBounds); // This useEffect dependency will trigger loadIssues
+      // Add tile layer
+      const tileUrl = locationService.getLeafletTileUrl(mapType);
+      const attribution = locationService.getLeafletAttribution(mapType);
+      
+      const tileLayer = window.L.tileLayer(tileUrl, {
+        attribution: attribution,
+        maxZoom: 19,
+      });
+      
+      tileLayer.addTo(map);
+      tileLayerRef.current = tileLayer;
+      console.log('✅ Tile layer added');
+
+      // Create marker layer group
+      markerLayerRef.current = window.L.layerGroup().addTo(map);
+      console.log('✅ Marker layer created');
+
+      // Create cluster group if library available
+      if (window.L.markerClusterGroup) {
+        clusterGroupRef.current = window.L.markerClusterGroup({
+          maxClusterRadius: 50,
+          spiderfyOnMaxZoom: true,
+          showCoverageOnHover: false,
+          zoomToBoundsOnClick: true,
+        });
+        console.log('✅ Cluster group created');
+      } else {
+        console.warn('⚠️ Marker clustering not available');
+      }
+
+      // Store map reference BEFORE setting up event listeners
+      mapInstanceRef.current = map;
+
+      // Listen to map movement - FIXED: Only after map is stored in ref
+      map.on('moveend', () => {
+        try {
+          const bounds = map.getBounds();
+          if (bounds) {
+            const newBounds = {
+              swLat: bounds.getSouth(),
+              swLng: bounds.getWest(),
+              neLat: bounds.getNorth(),
+              neLng: bounds.getEast(),
+            };
+            
+            console.log('🗺️ Map bounds updated:', newBounds);
+            setMapBounds(newBounds);
           }
+        } catch (err) {
+          console.error('Error getting map bounds:', err);
         }
       });
 
-      mapInstanceRef.current = map;
-      // Map is initialized, but data isn't loaded yet
-      console.log('🗺️ Map initialized successfully.');
+      // Mark as initialized
+      setMapInitialized(true);
+      console.log('✅ Leaflet map initialized successfully');
 
-      // --- START FIX ---
-      // Trigger initial data load *after* setting the ref and initial bounds
-      // We need initial bounds, so get them right after initialization
-      const initialBounds = map.getBounds();
-      if (initialBounds) {
-        const ne = initialBounds.getNorthEast();
-        const sw = initialBounds.getSouthWest();
-        setMapBounds({
-          neLat: ne.lat(),
-          neLng: ne.lng(),
-          swLat: sw.lat(),
-          swLng: sw.lng(),
-        }); // Set initial bounds to trigger useEffect -> loadIssues
-      } else {
-        console.warn(
-          'Could not get initial map bounds. Data loading might be delayed.',
-        );
-        // Fallback: Manually trigger load with default filters after a short delay
-        setTimeout(loadIssues, 500);
-      }
-      // --- END FIX ---
+      // Force resize and get initial bounds after a delay
+      setTimeout(() => {
+        try {
+          map.invalidateSize();
+          console.log('🔄 Map size invalidated');
+          
+          const initialBounds = map.getBounds();
+          if (initialBounds) {
+            setMapBounds({
+              swLat: initialBounds.getSouth(),
+              swLng: initialBounds.getWest(),
+              neLat: initialBounds.getNorth(),
+              neLng: initialBounds.getEast(),
+            });
+            console.log('✅ Initial bounds set');
+          }
+        } catch (err) {
+          console.error('Error in post-initialization:', err);
+        }
+      }, 200);
+
     } catch (err) {
       console.error('❌ Map initialization error:', err);
       setError(`Failed to initialize map: ${err.message}`);
-      setLoading(false);
+      initAttemptedRef.current = false; // Allow retry
+      setMapInitialized(false);
     }
-  };
+  }, [initialCenter, mapType, checkLeafletLibrary]); // FIXED: Removed mapBounds
 
-  // Separate function to load issues
+  // Get user location on mount
+  useEffect(() => {
+    console.log('🌍 Getting user location...');
+    
+    locationService
+      .getCurrentPosition()
+      .then((pos) => {
+        const center = [pos.latitude, pos.longitude];
+        setInitialCenter(center);
+        console.log('✅ User location obtained:', center);
+      })
+      .catch((err) => {
+        console.warn('⚠️ Could not get user location:', err.message);
+        console.log('📍 Using default center:', DEFAULT_CENTER);
+      });
+  }, []);
+
+  // Initialize map when ref is ready and Leaflet is available
+  useEffect(() => {
+    if (!mapRef.current) {
+      console.log('⏳ Waiting for map ref...');
+      return;
+    }
+
+    if (!window.L) {
+      console.log('⏳ Waiting for Leaflet to load...');
+      const timer = setTimeout(() => {
+        if (window.L && !mapInitialized && !initAttemptedRef.current) {
+          console.log('🔄 Retrying map initialization...');
+          initializeMap();
+        }
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+
+    if (!mapInitialized && !initAttemptedRef.current) {
+      console.log('🚀 Starting map initialization...');
+      // Add a small delay to ensure DOM is ready
+      setTimeout(() => {
+        initializeMap();
+      }, 100);
+    }
+  }, [mapInitialized, initializeMap]);
+
+  // Fetch issues when filters or bounds change
+  useEffect(() => {
+    if (mapInstanceRef.current && mapBounds && mapInitialized) {
+      loadIssues();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, mapBounds, mapInitialized]);
+
   const loadIssues = useCallback(async () => {
     if (!mapInstanceRef.current || !mapBounds) {
-      console.log('Load issues skipped: Map not ready or bounds missing.');
+      console.log('⏭️ Load issues skipped: Map not ready or bounds missing');
       return;
     }
 
     setLoading(true);
     setError('');
-    console.log(
-      '🔄 Loading issues for bounds:',
-      mapBounds,
-      'with filters:',
-      filters,
-    );
+    console.log('🔄 Loading issues for bounds:', mapBounds, 'filters:', filters);
 
     try {
-      // --- START FIX ---
-      // Use locationService.getIssuesInBounds
-      const response = await locationService.getIssuesInBounds(
-        mapBounds,
-        filters,
-      );
-      // locationService returns { data, meta }
+      const response = await locationService.getIssuesInBounds(mapBounds, filters);
       const issuesData = response.data || [];
-      // --- END FIX ---
 
       setIssues(issuesData);
-      updateMarkers(issuesData);
-      console.log(`✅ Loaded ${issuesData.length} issues.`);
+      
+      // Call updateMarkers inline instead of as dependency
+      if (mapInstanceRef.current && window.L) {
+        // Clear markers logic
+        if (markerLayerRef.current) {
+          markerLayerRef.current.clearLayers();
+        }
+        if (clusterGroupRef.current && mapInstanceRef.current?.hasLayer(clusterGroupRef.current)) {
+          mapInstanceRef.current.removeLayer(clusterGroupRef.current);
+          clusterGroupRef.current.clearLayers();
+        }
+        if (heatLayerRef.current && mapInstanceRef.current?.hasLayer(heatLayerRef.current)) {
+          mapInstanceRef.current.removeLayer(heatLayerRef.current);
+          heatLayerRef.current = null;
+        }
+        markersRef.current = [];
+
+        // Update markers logic
+        const newMarkers = issuesData
+          .filter((issue) =>
+            issue.location?.coordinates &&
+            locationService.isValidCoordinates(
+              issue.location.coordinates[1],
+              issue.location.coordinates[0]
+            )
+          )
+          .map((issue) => {
+            const lng = issue.location.coordinates[0];
+            const lat = issue.location.coordinates[1];
+
+            const icon = getMarkerIcon(issue);
+            const marker = window.L.marker([lat, lng], { icon });
+
+            marker.on('click', () => handleMarkerClick(issue, marker));
+            marker.issueData = issue;
+
+            return marker;
+          });
+
+        markersRef.current = newMarkers;
+
+        if (showHeatmap && window.L.heatLayer) {
+          // Heatmap logic (call updateHeatmap inline)
+          const heatmapData = issuesData
+            .filter((issue) =>
+              issue.location?.coordinates &&
+              locationService.isValidCoordinates(
+                issue.location.coordinates[1],
+                issue.location.coordinates[0]
+              )
+            )
+            .map((issue) => {
+              const lng = issue.location.coordinates[0];
+              const lat = issue.location.coordinates[1];
+              const weight = issue.priority === 'urgent' ? 3 : issue.priority === 'high' ? 2 : 1;
+              return [lat, lng, weight];
+            });
+
+          if (heatLayerRef.current) {
+            mapInstanceRef.current.removeLayer(heatLayerRef.current);
+          }
+
+          heatLayerRef.current = window.L.heatLayer(heatmapData, {
+            radius: 25,
+            blur: 15,
+            maxZoom: 17,
+            max: 3,
+            gradient: {
+              0.0: 'blue',
+              0.5: 'lime',
+              0.7: 'yellow',
+              0.9: 'orange',
+              1.0: 'red',
+            },
+          }).addTo(mapInstanceRef.current);
+
+          console.log(`✅ Updated heatmap with ${heatmapData.length} points`);
+        } else if (showClustering && clusterGroupRef.current) {
+          // Clustering logic
+          clusterGroupRef.current.clearLayers();
+          newMarkers.forEach((marker) => clusterGroupRef.current.addLayer(marker));
+          
+          if (!mapInstanceRef.current.hasLayer(clusterGroupRef.current)) {
+            mapInstanceRef.current.addLayer(clusterGroupRef.current);
+          }
+          console.log(`✅ Updated clustering with ${newMarkers.length} markers`);
+        } else {
+          newMarkers.forEach((marker) => markerLayerRef.current.addLayer(marker));
+        }
+
+        console.log(`✅ Updated ${newMarkers.length} markers on map`);
+      }
+
+      console.log(`✅ Loaded ${issuesData.length} issues`);
     } catch (err) {
       console.error('❌ Load issues error:', err);
-      setError(`Failed to load issues: ${err.message || 'Network error'}`);
-      setIssues([]); // Clear issues on error
-      updateMarkers([]); // Clear markers on error
+      const errorMsg = err.message || 'Network error';
+      setError(`Failed to load issues: ${errorMsg}`);
+      setIssues([]);
+      // Clear markers on error
+      if (markerLayerRef.current) {
+        markerLayerRef.current.clearLayers();
+      }
+      markersRef.current = [];
     } finally {
       setLoading(false);
     }
-  }, [mapBounds, filters]); // Include dependencies
+  }, [mapBounds, filters, showHeatmap, showClustering]); // Include all dependencies
 
-  // Cleanup map listener on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (idleListenerRef.current && window.google) {
-        window.google.maps.event.removeListener(idleListenerRef.current);
-      }
-      // Clean up other resources if necessary (e.g., markerClusterer)
-      if (markerClustererRef.current) {
-        markerClustererRef.current.clearMarkers();
+      console.log('🧹 Cleaning up map...');
+      if (mapInstanceRef.current) {
+        try {
+          mapInstanceRef.current.remove();
+        } catch (err) {
+          console.warn('Error during cleanup:', err);
+        }
+        mapInstanceRef.current = null;
       }
     };
   }, []);
 
   const updateMarkers = (issuesData) => {
-    if (!mapInstanceRef.current || !window.google) return;
+    if (!mapInstanceRef.current || !window.L) {
+      console.warn('⚠️ Cannot update markers: Map not ready');
+      return;
+    }
 
-    clearMarkers(); // Clear previous markers/clusters/heatmap
+    clearMarkers();
 
     const newMarkers = issuesData
-      .filter(
-        (issue) =>
-          issue.location?.coordinates && // Ensure coordinates exist
-          locationService.isValidCoordinates(
-            issue.location.coordinates[1],
-            issue.location.coordinates[0],
-          ), // Validate coordinates
+      .filter((issue) =>
+        issue.location?.coordinates &&
+        locationService.isValidCoordinates(
+          issue.location.coordinates[1],
+          issue.location.coordinates[0]
+        )
       )
       .map((issue) => {
-        // --- START FIX ---
-        // Backend coordinates are [longitude, latitude]
         const lng = issue.location.coordinates[0];
         const lat = issue.location.coordinates[1];
-        // --- END FIX ---
 
-        const marker = new window.google.maps.Marker({
-          position: { lat, lng },
-          // Add to map only if clustering is OFF
-          map: !showClustering ? mapInstanceRef.current : null,
-          title: issue.title,
-          icon: getMarkerIcon(issue),
-          // animation: window.google.maps.Animation.DROP, // Can be performance heavy with many markers
-        });
+        const icon = getMarkerIcon(issue);
+        const marker = window.L.marker([lat, lng], { icon });
 
-        marker.addListener('click', () => {
-          handleMarkerClick(issue, marker);
-        });
-
-        // Store issue data directly on the marker for easy access
+        marker.on('click', () => handleMarkerClick(issue, marker));
         marker.issueData = issue;
 
         return marker;
@@ -273,280 +402,71 @@ const MapView = ({ categories = [] }) => {
 
     markersRef.current = newMarkers;
 
-    if (showClustering && window.markerClusterer) {
+    if (showHeatmap && window.L.heatLayer) {
+      updateHeatmap(issuesData);
+    } else if (showClustering && clusterGroupRef.current) {
       updateClustering(newMarkers);
+    } else {
+      newMarkers.forEach((marker) => markerLayerRef.current.addLayer(marker));
     }
 
-    if (showHeatmap && window.google.maps.visualization) {
-      updateHeatmap(issuesData);
-      // Explicitly hide individual markers when heatmap is on
-      if (!showClustering) {
-        markersRef.current.forEach((marker) => marker.setMap(null));
-      }
-    }
-    console.log(`📍 Updated ${newMarkers.length} markers on map.`);
+    console.log(`✅ Updated ${newMarkers.length} markers on map`);
   };
 
   const clearMarkers = () => {
-    markersRef.current.forEach((marker) => marker.setMap(null));
+    if (markerLayerRef.current) {
+      markerLayerRef.current.clearLayers();
+    }
+    if (clusterGroupRef.current && mapInstanceRef.current?.hasLayer(clusterGroupRef.current)) {
+      mapInstanceRef.current.removeLayer(clusterGroupRef.current);
+      clusterGroupRef.current.clearLayers();
+    }
+    if (heatLayerRef.current && mapInstanceRef.current?.hasLayer(heatLayerRef.current)) {
+      mapInstanceRef.current.removeLayer(heatLayerRef.current);
+      heatLayerRef.current = null;
+    }
     markersRef.current = [];
-
-    if (markerClustererRef.current) {
-      markerClustererRef.current.clearMarkers();
-      // It's safer to nullify the ref if the library might re-initialize it
-      // markerClustererRef.current = null;
-    }
-
-    if (heatmapRef.current) {
-      heatmapRef.current.setMap(null);
-      heatmapRef.current = null;
-    }
   };
+
+  // ...existing code for getMarkerIcon, handleMarkerClick, getStatusColor, getPriorityColor...
 
   const getMarkerIcon = (issue) => {
     const colors = {
-      open: '#3b82f6', // Blue
-      'in-progress': '#f59e0b', // Amber
-      resolved: '#10b981', // Emerald
-      closed: '#6b7280', // Gray
-      rejected: '#ef4444', // Red
+      open: '#3b82f6',
+      'in-progress': '#f59e0b',
+      resolved: '#10b981',
+      closed: '#6b7280',
+      rejected: '#ef4444',
     };
     const color = colors[issue.status] || colors.closed;
+    const size = issue.priority === 'urgent' ? 14 : issue.priority === 'high' ? 12 : 10;
 
-    // Use Google Maps Symbols for better performance than custom SVGs/images for many markers
-    return {
-      path: window.google.maps.SymbolPath.CIRCLE,
-      fillColor: color,
-      fillOpacity: 0.9,
-      strokeColor: '#ffffff', // White outline
-      strokeWeight: 1.5,
-      scale:
-        issue.priority === 'urgent' ? 9 : issue.priority === 'high' ? 7.5 : 6, // Scale based on priority
-    };
+    return window.L.divIcon({
+      className: 'custom-marker',
+      html: `<div style="background-color: ${color}; width: ${size}px; height: ${size}px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+    });
   };
 
   const handleMarkerClick = (issue, marker) => {
-    if (!mapInstanceRef.current || !infoWindowRef.current) return;
+    if (!mapInstanceRef.current) return;
 
-    // Simple InfoWindow content
-    const content = `
-      <div class="map-infowindow">
-        <h3>${issue.title}</h3>
-        <p>${issue.description.substring(0, 80)}${
-      issue.description.length > 80 ? '...' : ''
-    }</p>
-        <div>
-          <span class="badge status-${issue.status}">${issue.status}</span>
-          <span class="badge priority-${issue.priority}">${
-      issue.priority
-    }</span>
+    const popupContent = `
+      <div style="font-family: sans-serif; max-width: 250px; padding: 8px;">
+        <h3 style="margin: 0 0 8px; font-size: 1em;">${issue.title}</h3>
+        <p style="margin: 0 0 8px; font-size: 0.85em; color: #555;">${issue.description.substring(0, 80)}${issue.description.length > 80 ? '...' : ''}</p>
+        <div style="margin-bottom: 8px; display: flex; gap: 5px; flex-wrap: wrap;">
+          <span style="padding: 2px 6px; border-radius: 4px; font-size: 0.75em; text-transform: capitalize; color: white; background-color: ${getStatusColor(issue.status)};">${issue.status}</span>
+          <span style="padding: 2px 6px; border-radius: 4px; font-size: 0.75em; text-transform: capitalize; color: white; background-color: ${getPriorityColor(issue.priority)};">${issue.priority}</span>
         </div>
-        <button class="view-details-btn" data-issue-id="${
-          issue._id
-        }">View Details</button>
+        <button onclick="window.viewIssueDetails('${issue._id}')" style="width: 100%; padding: 6px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em; margin-top: 5px;">View Details</button>
       </div>
-      <style>
-        .map-infowindow { font-family: sans-serif; max-width: 250px; padding: 5px; }
-        .map-infowindow h3 { margin: 0 0 5px; font-size: 1em; }
-        .map-infowindow p { margin: 0 0 8px; font-size: 0.85em; color: #555; }
-        .map-infowindow div { margin-bottom: 8px; display: flex; gap: 5px; }
-        .map-infowindow .badge { padding: 2px 6px; border-radius: 4px; font-size: 0.75em; text-transform: capitalize; color: white; }
-        .map-infowindow .status-open { background-color: #3b82f6; }
-        .map-infowindow .status-in-progress { background-color: #f59e0b; }
-        .map-infowindow .status-resolved { background-color: #10b981; }
-        .map-infowindow .status-closed { background-color: #6b7280; }
-        .map-infowindow .priority-low { background-color: #10b981; }
-        .map-infowindow .priority-medium { background-color: #f59e0b; }
-        .map-infowindow .priority-high { background-color: #f97316; }
-        .map-infowindow .priority-urgent { background-color: #ef4444; }
-        .map-infowindow .view-details-btn { width: 100%; padding: 6px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em; margin-top: 5px; }
-        /* Prevent button click from closing InfoWindow immediately */
-        .gm-style-iw button { pointer-events: auto !important; }
-      </style>
     `;
 
-    infoWindowRef.current.setContent(content);
-    infoWindowRef.current.open(mapInstanceRef.current, marker);
-
-    // Add listener *after* content is set and opened
-    // Use setTimeout to ensure the button exists in the DOM within the InfoWindow
-    setTimeout(() => {
-      const button = document.querySelector(
-        `.view-details-btn[data-issue-id="${issue._id}"]`,
-      );
-      if (button) {
-        // Remove previous listeners if any to prevent duplicates
-        button.onclick = null;
-        // Add the new listener
-        button.onclick = () => viewIssueDetails(issue._id);
-      }
-    }, 0);
+    marker.bindPopup(popupContent, { maxWidth: 300 }).openPopup();
   };
 
-  // Define viewIssueDetails within component scope
-  const viewIssueDetails = useCallback(
-    (issueId) => {
-      const issue = issues.find((i) => i._id === issueId);
-      if (issue) {
-        console.log('Opening details for issue:', issueId);
-        setSelectedIssue(issue);
-        setShowIssueModal(true);
-        // Close info window when modal opens
-        if (infoWindowRef.current) {
-          infoWindowRef.current.close();
-        }
-      } else {
-        console.error('Issue not found for ID:', issueId);
-      }
-    },
-    [issues],
-  ); // Dependency on 'issues'
-
-  const updateClustering = (markers) => {
-    if (!window.markerClusterer) {
-      console.warn('Marker Clusterer library not available.');
-      return;
-    }
-    // Clear previous clusterer instance before creating a new one
-    if (markerClustererRef.current) {
-      markerClustererRef.current.clearMarkers();
-    }
-    // Create new clusterer
-    markerClustererRef.current = new window.markerClusterer.MarkerClusterer({
-      map: mapInstanceRef.current,
-      markers: markers,
-      // Optional: Customize cluster icons
-      // renderer: { render: ({ count, position }) => new google.maps.Marker({ position, label: String(count) }) }
-    });
-    console.log(`🔄 Updated clustering with ${markers.length} markers.`);
-  };
-
-  const updateHeatmap = (issuesData) => {
-    if (!window.google?.maps?.visualization) {
-      console.warn('Heatmap library (visualization) not available.');
-      return;
-    }
-
-    const heatmapData = issuesData
-      .filter(
-        (issue) =>
-          issue.location?.coordinates &&
-          locationService.isValidCoordinates(
-            issue.location.coordinates[1],
-            issue.location.coordinates[0],
-          ),
-      )
-      .map((issue) => {
-        const lng = issue.location.coordinates[0];
-        const lat = issue.location.coordinates[1];
-        // Weight heatmap points based on priority
-        const weight =
-          issue.priority === 'urgent' ? 3 : issue.priority === 'high' ? 2 : 1;
-        return { location: new window.google.maps.LatLng(lat, lng), weight };
-      });
-
-    if (heatmapRef.current) {
-      heatmapRef.current.setData(heatmapData); // Update data if heatmap exists
-    } else {
-      heatmapRef.current = new window.google.maps.visualization.HeatmapLayer({
-        data: heatmapData,
-        map: mapInstanceRef.current,
-        radius: 30, // Adjust radius as needed
-        opacity: 0.7,
-        // Optional: Gradient customization
-        gradient: [
-          'rgba(0, 255, 255, 0)', // Transparent Aqua
-          'rgba(0, 255, 255, 1)', // Aqua
-          'rgba(0, 191, 255, 1)', // Deep Sky Blue
-          'rgba(0, 127, 255, 1)', // Azure
-          'rgba(0, 63, 255, 1)', // Blue
-          'rgba(0, 0, 255, 1)', // Blue
-          'rgba(0, 0, 223, 1)', // Medium Blue
-          'rgba(0, 0, 191, 1)', // Dark Blue
-          'rgba(0, 0, 159, 1)', // Navy
-          'rgba(0, 0, 127, 1)', // Midnight Blue
-          'rgba(255, 0, 0, 1)', // Red (for high intensity)
-        ],
-      });
-    }
-    // Ensure heatmap is visible
-    heatmapRef.current.setMap(mapInstanceRef.current);
-    console.log(`🔥 Updated heatmap with ${heatmapData.length} points.`);
-  };
-
-  const toggleMapType = (type) => {
-    if (
-      mapInstanceRef.current &&
-      ['roadmap', 'satellite', 'hybrid', 'terrain'].includes(type)
-    ) {
-      setMapType(type);
-      mapInstanceRef.current.setMapTypeId(type);
-    }
-  };
-
-  const toggleHeatmap = () => {
-    if (!window.google?.maps?.visualization) {
-      setError('Heatmap library not loaded.');
-      return;
-    }
-    const newShowHeatmap = !showHeatmap;
-    setShowHeatmap(newShowHeatmap);
-
-    if (newShowHeatmap) {
-      // Show heatmap, hide markers/clusters
-      updateHeatmap(issues);
-      markersRef.current.forEach((marker) => marker.setMap(null));
-      if (markerClustererRef.current) markerClustererRef.current.clearMarkers();
-    } else {
-      // Hide heatmap, show markers/clusters
-      if (heatmapRef.current) heatmapRef.current.setMap(null);
-      // Re-add markers (respecting clustering setting)
-      if (showClustering && window.markerClusterer) {
-        updateClustering(markersRef.current);
-      } else {
-        markersRef.current.forEach((marker) =>
-          marker.setMap(mapInstanceRef.current),
-        );
-      }
-    }
-  };
-
-  const toggleClustering = () => {
-    if (!window.markerClusterer) {
-      setError('Marker Clusterer library not loaded.');
-      return;
-    }
-    // Cannot enable clustering if heatmap is on
-    if (showHeatmap) return;
-
-    const newShowClustering = !showClustering;
-    setShowClustering(newShowClustering);
-
-    if (newShowClustering) {
-      // Enable clustering: Add markers to clusterer, remove from map
-      markersRef.current.forEach((marker) => marker.setMap(null)); // Hide individual markers first
-      updateClustering(markersRef.current);
-    } else {
-      // Disable clustering: Remove markers from clusterer, add to map
-      if (markerClustererRef.current) markerClustererRef.current.clearMarkers();
-      markersRef.current.forEach((marker) =>
-        marker.setMap(mapInstanceRef.current),
-      );
-    }
-  };
-
-  const handleFiltersChange = (newFilters) => {
-    console.log('🗺️ Filters changed:', newFilters);
-    setFilters(newFilters); // This will trigger the useEffect to load issues
-  };
-
-  const handleIssueUpdate = () => {
-    loadIssues(); // Reload issues after an update in the modal
-    setShowIssueModal(false);
-    setSelectedIssue(null);
-  };
-
-  // --- Utility for Legend ---
   const getStatusColor = (status) => {
     const colors = {
       open: '#3b82f6',
@@ -558,133 +478,243 @@ const MapView = ({ categories = [] }) => {
     return colors[status] || '#6b7280';
   };
 
-  // --- Render Logic ---
+  const getPriorityColor = (priority) => {
+    const colors = {
+      low: '#10b981',
+      medium: '#f59e0b',
+      high: '#f97316',
+      urgent: '#ef4444',
+    };
+    return colors[priority] || '#6b7280';
+  };
+
+  const viewIssueDetails = useCallback((issueId) => {
+    const issue = issues.find((i) => i._id === issueId);
+    if (issue) {
+      console.log('📖 Opening details for issue:', issueId);
+      setSelectedIssue(issue);
+      setShowIssueModal(true);
+    } else {
+      console.error('❌ Issue not found for ID:', issueId);
+    }
+  }, [issues]);
+
+  useEffect(() => {
+    window.viewIssueDetails = viewIssueDetails;
+    return () => {
+      delete window.viewIssueDetails;
+    };
+  }, [viewIssueDetails]);
+
+  const updateClustering = (markers) => {
+    if (!clusterGroupRef.current) {
+      console.warn('⚠️ Marker clustering not available');
+      return;
+    }
+
+    clusterGroupRef.current.clearLayers();
+    markers.forEach((marker) => clusterGroupRef.current.addLayer(marker));
+    
+    if (!mapInstanceRef.current.hasLayer(clusterGroupRef.current)) {
+      mapInstanceRef.current.addLayer(clusterGroupRef.current);
+    }
+
+    console.log(`✅ Updated clustering with ${markers.length} markers`);
+  };
+
+  const updateHeatmap = (issuesData) => {
+    if (!window.L.heatLayer) {
+      console.warn('⚠️ Heatmap library not available');
+      return;
+    }
+
+    const heatmapData = issuesData
+      .filter((issue) =>
+        issue.location?.coordinates &&
+        locationService.isValidCoordinates(
+          issue.location.coordinates[1],
+          issue.location.coordinates[0]
+        )
+      )
+      .map((issue) => {
+        const lng = issue.location.coordinates[0];
+        const lat = issue.location.coordinates[1];
+        const weight = issue.priority === 'urgent' ? 3 : issue.priority === 'high' ? 2 : 1;
+        return [lat, lng, weight];
+      });
+
+    if (heatLayerRef.current) {
+      mapInstanceRef.current.removeLayer(heatLayerRef.current);
+    }
+
+    heatLayerRef.current = window.L.heatLayer(heatmapData, {
+      radius: 25,
+      blur: 15,
+      maxZoom: 17,
+      max: 3,
+      gradient: {
+        0.0: 'blue',
+        0.5: 'lime',
+        0.7: 'yellow',
+        0.9: 'orange',
+        1.0: 'red',
+      },
+    }).addTo(mapInstanceRef.current);
+
+    console.log(`✅ Updated heatmap with ${heatmapData.length} points`);
+  };
+
+  const toggleMapType = (type) => {
+    if (!tileLayerRef.current || !mapInstanceRef.current) return;
+
+    setMapType(type);
+    mapInstanceRef.current.removeLayer(tileLayerRef.current);
+
+    const tileUrl = locationService.getLeafletTileUrl(type);
+    const attribution = locationService.getLeafletAttribution(type);
+
+    tileLayerRef.current = window.L.tileLayer(tileUrl, {
+      attribution: attribution,
+      maxZoom: 19,
+    }).addTo(mapInstanceRef.current);
+  };
+
+  const toggleHeatmap = () => {
+    if (!window.L.heatLayer) {
+      setError('Heatmap library not loaded.');
+      return;
+    }
+
+    const newShowHeatmap = !showHeatmap;
+    setShowHeatmap(newShowHeatmap);
+
+    if (newShowHeatmap) {
+      clearMarkers();
+      updateHeatmap(issues);
+    } else {
+      if (heatLayerRef.current) {
+        mapInstanceRef.current.removeLayer(heatLayerRef.current);
+        heatLayerRef.current = null;
+      }
+      updateMarkers(issues);
+    }
+  };
+
+  const toggleClustering = () => {
+    if (!clusterGroupRef.current) {
+      setError('Marker clustering library not loaded.');
+      return;
+    }
+
+    if (showHeatmap) return;
+
+    const newShowClustering = !showClustering;
+    setShowClustering(newShowClustering);
+
+    clearMarkers();
+    updateMarkers(issues);
+  };
+
+  const handleFiltersChange = (newFilters) => {
+    console.log('🔍 Filters changed:', newFilters);
+    setFilters(newFilters);
+  };
+
+  const handleIssueUpdate = () => {
+    loadIssues();
+    setShowIssueModal(false);
+    setSelectedIssue(null);
+  };
+
   return (
     <div className="map-view">
-      {/* Map Controls */}
       <div className="map-controls">
         <IssueFilters
           categories={categories}
           onFiltersChange={handleFiltersChange}
-          // Only show user-specific filters if logged in
           showUserFilters={!!user}
         />
 
         <div className="view-controls">
-          {/* Map Type Selector */}
           <div className="control-group">
             <label className="control-label">Map Type</label>
             <div className="button-group">
-              {['roadmap', 'satellite', 'terrain'].map((type) => (
+              {['standard', 'satellite', 'terrain'].map((type) => (
                 <button
                   key={type}
                   className={`control-btn ${mapType === type ? 'active' : ''}`}
                   onClick={() => toggleMapType(type)}
                   title={type.charAt(0).toUpperCase() + type.slice(1)}
+                  disabled={!mapInitialized}
                 >
-                  {type === 'roadmap'
-                    ? '🗺️'
-                    : type === 'satellite'
-                    ? '🛰️'
-                    : '⛰️'}
-                  <span className="btn-text">
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
-                  </span>
+                  {type === 'standard' ? '🗺️' : type === 'satellite' ? '🛰️' : '⛰️'}
+                  <span className="btn-text">{type.charAt(0).toUpperCase() + type.slice(1)}</span>
                 </button>
               ))}
             </div>
           </div>
 
-          {/* View Options */}
           <div className="control-group">
             <label className="control-label">View Options</label>
             <div className="button-group">
               <button
                 className={`control-btn ${showHeatmap ? 'active' : ''}`}
                 onClick={toggleHeatmap}
-                disabled={!window.google?.maps?.visualization}
-                title={
-                  window.google?.maps?.visualization
-                    ? showHeatmap
-                      ? 'Hide Heatmap'
-                      : 'Show Heatmap'
-                    : 'Heatmap library not loaded'
-                }
+                disabled={!window.L?.heatLayer || !mapInitialized}
+                title={window.L?.heatLayer ? (showHeatmap ? 'Hide Heatmap' : 'Show Heatmap') : 'Heatmap library not loaded'}
               >
                 🔥<span className="btn-text">Heatmap</span>
               </button>
               <button
                 className={`control-btn ${showClustering ? 'active' : ''}`}
                 onClick={toggleClustering}
-                disabled={showHeatmap || !window.markerClusterer} // Disable if heatmap is on or library missing
-                title={
-                  window.markerClusterer
-                    ? showClustering
-                      ? 'Disable Clustering'
-                      : 'Enable Clustering'
-                    : 'Clustering library not loaded'
-                }
+                disabled={showHeatmap || !clusterGroupRef.current || !mapInitialized}
+                title={clusterGroupRef.current ? (showClustering ? 'Disable Clustering' : 'Enable Clustering') : 'Clustering library not loaded'}
               >
                 📍<span className="btn-text">Clustering</span>
               </button>
             </div>
           </div>
 
-          {/* Stats Display */}
           <div className="map-stats">
             <div className="stat-item">
               <span className="stat-label">Issues Visible:</span>
-              <span className="stat-value">
-                {loading ? '...' : issues.length}
-              </span>
+              <span className="stat-value">{loading ? '...' : issues.length}</span>
             </div>
-            {/* Add more stats if needed */}
           </div>
         </div>
       </div>
 
-      {/* Map Container */}
       <div className="map-container">
-        {/* Initial Loading or Error before map is ready */}
-        {!mapInstanceRef.current && (loading || error) && (
+        {!mapInitialized && !error && (
           <div className="map-feedback-overlay">
-            {loading && (
-              <Feedback type="loading" message="Initializing Map..." />
-            )}
-            {error && (
-              <Feedback type="error" title="Map Error" message={error} />
-            )}
+            <Feedback type="loading" message="Initializing Map..." />
           </div>
         )}
 
-        {/* Map Canvas */}
-        <div
-          ref={mapRef}
-          className={`map-canvas ${loading ? 'loading' : ''}`}
-        />
+        {error && (
+          <div className="map-feedback-overlay">
+            <Feedback type="error" title="Map Error" message={error} />
+          </div>
+        )}
 
-        {/* Legend (only if map is ready and heatmap is off) */}
-        {mapInstanceRef.current && !showHeatmap && (
+        <div ref={mapRef} className={`map-canvas ${!mapInitialized ? 'loading' : ''}`} />
+
+        {mapInitialized && !showHeatmap && (
           <div className="map-legend">
             <h4 className="legend-title">Status Key</h4>
             <div className="legend-items">
               {['open', 'in-progress', 'resolved', 'closed'].map((status) => (
                 <div key={status} className="legend-item">
-                  <span
-                    className="legend-color"
-                    style={{ backgroundColor: getStatusColor(status) }}
-                  />
-                  <span className="legend-label">
-                    {status.replace('-', ' ')}
-                  </span>
+                  <span className="legend-color" style={{ backgroundColor: getStatusColor(status) }} />
+                  <span className="legend-label">{status.replace('-', ' ')}</span>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Loading Overlay for Data Fetch */}
-        {mapInstanceRef.current && loading && (
+        {mapInitialized && loading && (
           <div className="map-loading-overlay data-loading">
             <div className="spinner-small"></div>
             <span>Loading issues...</span>
@@ -692,18 +722,15 @@ const MapView = ({ categories = [] }) => {
         )}
       </div>
 
-      {/* Issue Detail Modal */}
       {showIssueModal && selectedIssue && (
         <IssueDetailModal
           issue={selectedIssue}
           isOpen={showIssueModal}
           onClose={() => {
             setShowIssueModal(false);
-            setSelectedIssue(null); // Clear selected issue on close
+            setSelectedIssue(null);
           }}
-          // Pass user to modal if needed for permissions
-          // currentUser={user}
-          onUpdate={handleIssueUpdate} // Reload data if issue updated in modal
+          onUpdate={handleIssueUpdate}
         />
       )}
     </div>

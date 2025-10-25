@@ -267,7 +267,6 @@ const locationService = {
     }
   },
 
-  // --- START FIX ---
   /**
    * Get issues within specific map bounds
    * @param {Object} bounds { swLat, swLng, neLat, neLng }
@@ -286,14 +285,24 @@ const locationService = {
       }
       console.log('📍 Fetching issues in bounds:', { bounds, filters });
 
+      // Ensure all bounds are proper numbers (not strings)
       const params = {
-        swLat: bounds.swLat,
-        swLng: bounds.swLng,
-        neLat: bounds.neLat,
-        neLng: bounds.neLng,
+        swLat: Number(bounds.swLat),
+        swLng: Number(bounds.swLng),
+        neLat: Number(bounds.neLat),
+        neLng: Number(bounds.neLng),
         ...filters,
-        limit: 1000, // Fetch a reasonable limit for map display
+        limit: filters.limit || 1000,
       };
+
+      // Remove any undefined or null filter values
+      Object.keys(params).forEach(key => {
+        if (params[key] === undefined || params[key] === null || params[key] === '') {
+          delete params[key];
+        }
+      });
+
+      console.log('📤 Request params:', params);
 
       const response = await api.get(API_ENDPOINTS.LOCATION.ISSUES_BOUNDS, {
         params,
@@ -309,10 +318,10 @@ const locationService = {
       return { data, meta };
     } catch (error) {
       console.error('Get issues in bounds error:', error);
+      console.error('Error response:', error.response?.data);
       throw error;
     }
   },
-  // --- END FIX ---
 
   // ============================================
   // VALIDATION
@@ -616,7 +625,19 @@ const locationService = {
   // MAP HELPERS
   // ============================================
 
-  /** Get Google Maps URL for a point */
+  /** Get OpenStreetMap URL for a point */
+  getOpenStreetMapUrl: (latitude, longitude, zoom = 15) => {
+    const lat = safeParseFloat(latitude);
+    const lng = safeParseFloat(longitude);
+    if (lat === null || lng === null) return '';
+    return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}&zoom=${clamp(
+      zoom,
+      1,
+      19,
+    )}`;
+  },
+
+  /** Get Google Maps URL for a point (fallback) */
   getGoogleMapsUrl: (latitude, longitude, zoom = 15) => {
     const lat = safeParseFloat(latitude);
     const lng = safeParseFloat(longitude);
@@ -625,7 +646,6 @@ const locationService = {
       zoom,
       1,
       21,
-      15,
     )}`;
   },
 
@@ -640,32 +660,28 @@ const locationService = {
     return `https://www.google.com/maps/dir/?api=1&origin=${oLat},${oLng}&destination=${dLat},${dLng}`;
   },
 
-  /** Get Google Static Map URL */
-  getStaticMapUrl: (latitude, longitude, options = {}) => {
-    const lat = safeParseFloat(latitude);
-    const lng = safeParseFloat(longitude);
-    if (lat === null || lng === null) return '';
+  /** Get Leaflet tile layer URL (OpenStreetMap) */
+  getLeafletTileUrl: (mapType = 'standard') => {
+    const tileUrls = {
+      standard: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      terrain: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+      dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    };
+    return tileUrls[mapType] || tileUrls.standard;
+  },
 
-    const {
-      zoom = 15,
-      width = 600,
-      height = 400,
-      marker = true,
-      apiKey = process.env.REACT_APP_GOOGLE_MAPS_API_KEY, // Ensure this env var is set
-    } = options;
-
-    let url = `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${clamp(
-      zoom,
-      1,
-      21,
-      15,
-    )}&size=${clamp(width, 10, 1024, 600)}x${clamp(height, 10, 1024, 400)}`;
-
-    if (marker) url += `&markers=color:red%7C${lat},${lng}`;
-    if (apiKey) url += `&key=${apiKey}`;
-    else console.warn('Static Map URL: Google Maps API key not provided.');
-
-    return url;
+  /** Get Leaflet tile attribution */
+  getLeafletAttribution: (mapType = 'standard') => {
+    const attributions = {
+      standard: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      satellite: '&copy; <a href="https://www.esri.com/">Esri</a>',
+      terrain: '&copy; <a href="https://opentopomap.org">OpenTopoMap</a> contributors',
+      dark: '&copy; <a href="https://carto.com/attributions">CARTO</a>',
+      light: '&copy; <a href="https://carto.com/attributions">CARTO</a>',
+    };
+    return attributions[mapType] || attributions.standard;
   },
 
   // ============================================

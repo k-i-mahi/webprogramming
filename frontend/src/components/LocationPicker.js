@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import locationService from '../services/locationService';
 import './LocationPicker.css';
 
 const LocationPicker = ({
@@ -24,12 +25,94 @@ const LocationPicker = ({
   const markerRef = useRef(null);
   const mapInstanceRef = useRef(null);
 
+  // Move initializeMap to useCallback to fix dependency warning
+  const initializeMap = useCallback(() => {
+    if (!window.L) {
+      console.error('Leaflet not loaded');
+      setError('Map service not available');
+      return;
+    }
+
+    if (!location.lat || !location.lng) return;
+
+    try {
+      const map = window.L.map(mapRef.current, {
+        center: [location.lat, location.lng],
+        zoom: 15,
+        zoomControl: true,
+      });
+
+      const tileUrl = locationService.getLeafletTileUrl('standard');
+      const attribution = locationService.getLeafletAttribution('standard');
+
+      window.L.tileLayer(tileUrl, {
+        attribution: attribution,
+        maxZoom: 19,
+      }).addTo(map);
+
+      const markerIcon = window.L.divIcon({
+        className: 'custom-marker',
+        html: '<div style="background-color: #667eea; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.4);"></div>',
+        iconSize: [20, 20],
+        iconAnchor: [10, 10],
+      });
+
+      const marker = window.L.marker([location.lat, location.lng], {
+        icon: markerIcon,
+        draggable: !disabled,
+        title: 'Issue Location',
+      }).addTo(map);
+
+      if (!disabled) {
+        marker.on('dragend', (event) => {
+          const newLatLng = event.target.getLatLng();
+          handleLocationUpdate(newLatLng.lat, newLatLng.lng);
+        });
+
+        map.on('click', (event) => {
+          const newLatLng = event.latlng;
+          marker.setLatLng(newLatLng);
+          handleLocationUpdate(newLatLng.lat, newLatLng.lng);
+        });
+      }
+
+      mapInstanceRef.current = map;
+      markerRef.current = marker;
+      setMapReady(true);
+      setError('');
+    } catch (err) {
+      console.error('Map initialization error:', err);
+      setError('Failed to initialize map');
+    }
+  }, [location.lat, location.lng, disabled]); // Add dependencies
+
+  const handleLocationUpdate = useCallback((lat, lng) => {
+    setLocation({ lat, lng });
+    setCurrentAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+
+    if (onLocationChange) {
+      onLocationChange({
+        latitude: lat,
+        longitude: lng,
+        address: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+      });
+    }
+  }, [onLocationChange]);
+
+  const updateMapLocation = useCallback((lat, lng) => {
+    if (mapInstanceRef.current && markerRef.current) {
+      const newLatLng = [lat, lng];
+      mapInstanceRef.current.setView(newLatLng, mapInstanceRef.current.getZoom());
+      markerRef.current.setLatLng(newLatLng);
+    }
+  }, []);
+
   // Initialize map when location is available
   useEffect(() => {
     if (location.lat && location.lng && showMap && !mapInstanceRef.current) {
       initializeMap();
     }
-  }, [location, showMap]);
+  }, [location.lat, location.lng, showMap, initializeMap]);
 
   // Update location when props change
   useEffect(() => {
@@ -46,109 +129,7 @@ const LocationPicker = ({
     if (address && address !== currentAddress) {
       setCurrentAddress(address);
     }
-  }, [latitude, longitude, address]);
-
-  const initializeMap = () => {
-    // Check if Google Maps is loaded
-    if (!window.google || !window.google.maps) {
-      console.error('Google Maps not loaded');
-      setError('Map service not available');
-      return;
-    }
-
-    try {
-      const map = new window.google.maps.Map(mapRef.current, {
-        center: { lat: location.lat, lng: location.lng },
-        zoom: 15,
-        mapTypeControl: false,
-        streetViewControl: false,
-        fullscreenControl: true,
-        zoomControl: true,
-      });
-
-      const marker = new window.google.maps.Marker({
-        position: { lat: location.lat, lng: location.lng },
-        map: map,
-        draggable: !disabled,
-        title: 'Issue Location',
-      });
-
-      // Handle marker drag
-      if (!disabled) {
-        marker.addListener('dragend', (event) => {
-          const newLat = event.latLng.lat();
-          const newLng = event.latLng.lng();
-          handleLocationUpdate(newLat, newLng);
-        });
-
-        // Handle map click
-        map.addListener('click', (event) => {
-          const newLat = event.latLng.lat();
-          const newLng = event.latLng.lng();
-          marker.setPosition({ lat: newLat, lng: newLng });
-          handleLocationUpdate(newLat, newLng);
-        });
-      }
-
-      mapInstanceRef.current = map;
-      markerRef.current = marker;
-      setMapReady(true);
-      setError('');
-    } catch (err) {
-      console.error('Map initialization error:', err);
-      setError('Failed to initialize map');
-    }
-  };
-
-  const updateMapLocation = (lat, lng) => {
-    if (mapInstanceRef.current && markerRef.current) {
-      const position = { lat, lng };
-      mapInstanceRef.current.setCenter(position);
-      markerRef.current.setPosition(position);
-    }
-  };
-
-  const handleLocationUpdate = (lat, lng) => {
-    setLocation({ lat, lng });
-
-    // Reverse geocode to get address
-    reverseGeocode(lat, lng);
-
-    // Notify parent
-    if (onLocationChange) {
-      onLocationChange({
-        latitude: lat,
-        longitude: lng,
-        address: currentAddress,
-      });
-    }
-  };
-
-  const reverseGeocode = async (lat, lng) => {
-    if (!window.google || !window.google.maps) return;
-
-    const geocoder = new window.google.maps.Geocoder();
-    const latlng = { lat, lng };
-
-    try {
-      geocoder.geocode({ location: latlng }, (results, status) => {
-        if (status === 'OK' && results[0]) {
-          const address = results[0].formatted_address;
-          setCurrentAddress(address);
-
-          if (onLocationChange) {
-            onLocationChange({
-              latitude: lat,
-              longitude: lng,
-              address: address,
-            });
-          }
-        }
-      });
-    } catch (err) {
-      console.error('Geocoding error:', err);
-    }
-  };
+  }, [latitude, longitude, address, location.lat, location.lng, currentAddress, updateMapLocation]);
 
   const getCurrentLocation = () => {
     if (!navigator.geolocation) {
@@ -194,20 +175,15 @@ const LocationPicker = ({
         enableHighAccuracy: true,
         timeout: 10000,
         maximumAge: 0,
-      },
+      }
     );
   };
 
   const handleCoordinateChange = (field, value) => {
     const numValue = parseFloat(value);
-
     if (isNaN(numValue)) return;
 
-    const newLocation = {
-      ...location,
-      [field]: numValue,
-    };
-
+    const newLocation = { ...location, [field]: numValue };
     setLocation(newLocation);
 
     if (newLocation.lat && newLocation.lng) {
@@ -231,7 +207,6 @@ const LocationPicker = ({
 
   return (
     <div className="location-picker">
-      {/* Current Location Button */}
       <div className="location-actions">
         <button
           type="button"
@@ -240,9 +215,7 @@ const LocationPicker = ({
           disabled={disabled || loading}
         >
           <span className="location-icon">📍</span>
-          <span>
-            {loading ? 'Getting Location...' : 'Use Current Location'}
-          </span>
+          <span>{loading ? 'Getting Location...' : 'Use Current Location'}</span>
         </button>
 
         {isValidLocation() && (
@@ -253,7 +226,6 @@ const LocationPicker = ({
         )}
       </div>
 
-      {/* Error Message */}
       {error && (
         <div className="location-error">
           <span className="error-icon">⚠</span>
@@ -261,12 +233,9 @@ const LocationPicker = ({
         </div>
       )}
 
-      {/* Coordinates Input */}
       <div className="coordinates-input">
         <div className="coordinate-group">
-          <label htmlFor="latitude" className="coordinate-label">
-            Latitude
-          </label>
+          <label htmlFor="latitude" className="coordinate-label">Latitude</label>
           <input
             type="number"
             id="latitude"
@@ -275,7 +244,7 @@ const LocationPicker = ({
             max="90"
             value={location.lat || ''}
             onChange={(e) => handleCoordinateChange('lat', e.target.value)}
-            placeholder="e.g., 40.7128"
+            placeholder="e.g., 22.818"
             className="coordinate-input"
             disabled={disabled}
             required
@@ -283,9 +252,7 @@ const LocationPicker = ({
         </div>
 
         <div className="coordinate-group">
-          <label htmlFor="longitude" className="coordinate-label">
-            Longitude
-          </label>
+          <label htmlFor="longitude" className="coordinate-label">Longitude</label>
           <input
             type="number"
             id="longitude"
@@ -294,7 +261,7 @@ const LocationPicker = ({
             max="180"
             value={location.lng || ''}
             onChange={(e) => handleCoordinateChange('lng', e.target.value)}
-            placeholder="e.g., -74.0060"
+            placeholder="e.g., 89.5539"
             className="coordinate-input"
             disabled={disabled}
             required
@@ -302,10 +269,9 @@ const LocationPicker = ({
         </div>
       </div>
 
-      {/* Address Display */}
       {currentAddress && (
         <div className="address-display">
-          <label className="address-label">Address</label>
+          <label className="address-label">Coordinates</label>
           <div className="address-value">
             <span className="address-icon">📌</span>
             <span>{currentAddress}</span>
@@ -313,7 +279,6 @@ const LocationPicker = ({
         </div>
       )}
 
-      {/* Map */}
       {showMap && isValidLocation() && (
         <div className="map-container">
           <div ref={mapRef} className="map-canvas" style={{ height }} />
@@ -332,8 +297,7 @@ const LocationPicker = ({
         </div>
       )}
 
-      {/* Loading Google Maps Script */}
-      {!window.google && showMap && (
+      {!window.L && showMap && (
         <div className="map-loading">
           <p>Loading map service...</p>
         </div>

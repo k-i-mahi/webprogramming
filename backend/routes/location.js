@@ -80,17 +80,29 @@ router.get(
   optionalAuth,
   [
     query('swLat')
+      .notEmpty()
+      .withMessage('Southwest latitude required')
       .isFloat({ min: -90, max: 90 })
-      .withMessage('Valid southwest latitude required'),
+      .withMessage('Valid southwest latitude required (-90 to 90)')
+      .toFloat(), // Convert to float
     query('swLng')
+      .notEmpty()
+      .withMessage('Southwest longitude required')
       .isFloat({ min: -180, max: 180 })
-      .withMessage('Valid southwest longitude required'),
+      .withMessage('Valid southwest longitude required (-180 to 180)')
+      .toFloat(), // Convert to float
     query('neLat')
+      .notEmpty()
+      .withMessage('Northeast latitude required')
       .isFloat({ min: -90, max: 90 })
-      .withMessage('Valid northeast latitude required'),
+      .withMessage('Valid northeast latitude required (-90 to 90)')
+      .toFloat(), // Convert to float
     query('neLng')
+      .notEmpty()
+      .withMessage('Northeast longitude required')
       .isFloat({ min: -180, max: 180 })
-      .withMessage('Valid northeast longitude required'),
+      .withMessage('Valid northeast longitude required (-180 to 180)')
+      .toFloat(), // Convert to float
     query('status')
       .optional()
       .isIn(['open', 'in-progress', 'resolved', 'closed', 'rejected'])
@@ -99,7 +111,15 @@ router.get(
       .optional()
       .isIn(['low', 'medium', 'high', 'urgent'])
       .withMessage('Invalid priority'),
-    query('category').optional().isMongoId().withMessage('Invalid category ID'),
+    query('category')
+      .optional()
+      .isMongoId()
+      .withMessage('Invalid category ID'),
+    query('limit')
+      .optional()
+      .isInt({ min: 1, max: 2000 })
+      .withMessage('Limit must be between 1 and 2000')
+      .toInt(), // Convert to int
   ],
   validate,
   getIssuesInBounds,

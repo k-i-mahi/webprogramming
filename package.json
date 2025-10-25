@@ -12,10 +12,19 @@
     "install-all": "npm run install-server && npm run install-client",
     "build": "cd frontend && npm run build"
   },
-  "keywords": ["mern", "react", "nodejs", "express", "mongodb"],
+  "keywords": [
+    "mern",
+    "react",
+    "nodejs",
+    "express",
+    "mongodb"
+  ],
   "author": "",
   "license": "MIT",
   "devDependencies": {
     "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4"
   }
 }

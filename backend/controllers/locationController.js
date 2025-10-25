@@ -319,7 +319,7 @@ const getIssuesInBounds = async (req, res) => {
       limit = 500,
     } = req.query;
 
-    console.log('📍 Get issues in bounds:', {
+    console.log('📍 Get issues in bounds - Raw params:', {
       swLat,
       swLng,
       neLat,
@@ -330,10 +330,13 @@ const getIssuesInBounds = async (req, res) => {
       limit,
     });
 
+    // Validation is now handled by express-validator with .toFloat()
+    // But we still do a safety check
     if (!swLat || !swLng || !neLat || !neLng) {
       return res.status(400).json({
         success: false,
         message: 'Bounding box coordinates are required',
+        received: { swLat, swLng, neLat, neLng },
       });
     }
 
@@ -341,27 +344,63 @@ const getIssuesInBounds = async (req, res) => {
     const maxLimit = 2000;
     const lim = clampInt(limit, minLimit, maxLimit, 500);
 
-    const swLatF = parseFloatParam(swLat);
-    const swLngF = parseFloatParam(swLng);
-    const neLatF = parseFloatParam(neLat);
-    const neLngF = parseFloatParam(neLng);
+    // These should already be floats from validation
+    const swLatF = parseFloat(swLat);
+    const swLngF = parseFloat(swLng);
+    const neLatF = parseFloat(neLat);
+    const neLngF = parseFloat(neLng);
+
+    console.log('📍 Parsed coordinates:', {
+      swLatF,
+      swLngF,
+      neLatF,
+      neLngF,
+      types: {
+        swLat: typeof swLatF,
+        swLng: typeof swLngF,
+        neLat: typeof neLatF,
+        neLng: typeof neLngF,
+      },
+    });
 
     if (
       [swLatF, swLngF, neLatF, neLngF].some(
         (v) => v === null || Number.isNaN(v),
       )
     ) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'Invalid bounding box coordinates' });
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid bounding box coordinates',
+        details: {
+          swLat: swLatF,
+          swLng: swLngF,
+          neLat: neLatF,
+          neLng: neLngF,
+        },
+      });
     }
 
+    // Validate coordinate ranges
+    if (
+      swLatF < -90 || swLatF > 90 ||
+      neLatF < -90 || neLatF > 90 ||
+      swLngF < -180 || swLngF > 180 ||
+      neLngF < -180 || neLngF > 180
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Coordinates out of valid range',
+        details: 'Latitude must be -90 to 90, Longitude must be -180 to 180',
+      });
+    }
+
+    // Build query
     const query = {
       'location.coordinates': {
         $geoWithin: {
           $box: [
-            [swLngF, swLatF],
-            [neLngF, neLatF],
+            [swLngF, swLatF], // Southwest corner [lng, lat]
+            [neLngF, neLatF], // Northeast corner [lng, lat]
           ],
         },
       },
@@ -369,13 +408,25 @@ const getIssuesInBounds = async (req, res) => {
 
     if (status) query.status = status;
     if (priority) query.priority = priority;
-    if (category) query.category = category;
+    if (category) {
+      try {
+        query.category = mongoose.Types.ObjectId(category);
+      } catch (err) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid category ID format',
+        });
+      }
+    }
     if (!req.user) query.isPublic = true;
+
+    console.log('🔍 MongoDB query:', JSON.stringify(query, null, 2));
 
     const issues = await Issue.find(query)
       .populate('reportedBy', 'name avatar')
       .populate('category', 'name displayName icon color')
-      .select('title status priority location category createdAt updatedAt')
+      .populate('assignedTo', 'name avatar')
+      .select('title description status priority location category reportedBy assignedTo createdAt updatedAt images tags')
       .limit(lim)
       .lean();
 
@@ -391,10 +442,12 @@ const getIssuesInBounds = async (req, res) => {
           northeast: { latitude: neLatF, longitude: neLngF },
         },
         limit: lim,
+        filters: { status, priority, category },
       },
     });
   } catch (error) {
-    console.error('Get issues in bounds error:', error);
+    console.error('❌ Get issues in bounds error:', error);
+    console.error('Error stack:', error.stack);
     return res.status(500).json({
       success: false,
       message: 'Server error fetching issues',
