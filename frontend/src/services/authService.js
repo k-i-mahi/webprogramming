@@ -142,7 +142,10 @@ const authService = {
    */
   updateProfile: async (userData) => {
     try {
-      const response = await api.put(API_ENDPOINTS.AUTH.UPDATE_PROFILE, userData);
+      const response = await api.put(
+        API_ENDPOINTS.AUTH.UPDATE_PROFILE,
+        userData,
+      );
 
       // Update stored user data
       if (response.data.success && response.data.data) {
@@ -170,9 +173,13 @@ const authService = {
       const formData = new FormData();
       formData.append('avatar', file);
 
-      const response = await api.post(API_ENDPOINTS.AUTH.UPLOAD_AVATAR, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const response = await api.post(
+        API_ENDPOINTS.AUTH.UPLOAD_AVATAR,
+        formData,
+        {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        },
+      );
 
       // Update stored user data
       if (response.data.success && response.data.data) {
@@ -225,7 +232,10 @@ const authService = {
    */
   changePassword: async (passwords) => {
     try {
-      const response = await api.put(API_ENDPOINTS.AUTH.CHANGE_PASSWORD, passwords);
+      const response = await api.put(
+        API_ENDPOINTS.AUTH.CHANGE_PASSWORD,
+        passwords,
+      );
       return response.data;
     } catch (error) {
       console.error('Change password error:', error);
@@ -278,7 +288,9 @@ const authService = {
    */
   validateResetToken: async (token) => {
     try {
-      const response = await api.get(`${API_ENDPOINTS.AUTH.RESET_PASSWORD}/validate/${token}`);
+      const response = await api.get(
+        `${API_ENDPOINTS.AUTH.RESET_PASSWORD}/validate/${token}`,
+      );
       return response.data;
     } catch (error) {
       console.error('Validate reset token error:', error);
@@ -297,7 +309,9 @@ const authService = {
    */
   verifyEmail: async (token) => {
     try {
-      const response = await api.get(`${API_ENDPOINTS.AUTH.VERIFY_EMAIL}/${token}`);
+      const response = await api.get(
+        `${API_ENDPOINTS.AUTH.VERIFY_EMAIL}/${token}`,
+      );
 
       // Update user if verification includes login
       if (response.data.success && response.data.token) {
@@ -337,7 +351,8 @@ const authService = {
   getUserStats: async () => {
     try {
       const response = await api.get(API_ENDPOINTS.AUTH.STATS);
-      return response.data;
+      // Return the data property which contains the stats object
+      return response.data?.data || response.data;
     } catch (error) {
       console.error('Get user stats error:', error);
       throw error;
@@ -408,7 +423,10 @@ const authService = {
    */
   reactivateAccount: async (credentials) => {
     try {
-      const response = await api.post(API_ENDPOINTS.AUTH.REACTIVATE, credentials);
+      const response = await api.post(
+        API_ENDPOINTS.AUTH.REACTIVATE,
+        credentials,
+      );
 
       // Login after reactivation
       if (response.data.success && response.data.token) {
@@ -448,7 +466,9 @@ const authService = {
    */
   revokeSession: async (sessionId) => {
     try {
-      const response = await api.delete(`${API_ENDPOINTS.AUTH.SESSIONS}/${sessionId}`);
+      const response = await api.delete(
+        `${API_ENDPOINTS.AUTH.SESSIONS}/${sessionId}`,
+      );
       return response.data;
     } catch (error) {
       console.error('Revoke session error:', error);
@@ -495,7 +515,9 @@ const authService = {
    */
   verify2FA: async (code) => {
     try {
-      const response = await api.post(API_ENDPOINTS.AUTH.TWO_FA_VERIFY, { code });
+      const response = await api.post(API_ENDPOINTS.AUTH.TWO_FA_VERIFY, {
+        code,
+      });
       return response.data;
     } catch (error) {
       console.error('Verify 2FA error:', error);
@@ -510,7 +532,9 @@ const authService = {
    */
   disable2FA: async (password) => {
     try {
-      const response = await api.post(API_ENDPOINTS.AUTH.TWO_FA_DISABLE, { password });
+      const response = await api.post(API_ENDPOINTS.AUTH.TWO_FA_DISABLE, {
+        password,
+      });
       return response.data;
     } catch (error) {
       console.error('Disable 2FA error:', error);
@@ -573,7 +597,7 @@ const authService = {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     sessionStorage.clear();
-    
+
     // Clear any cached API responses
     if (window.caches) {
       caches.keys().then((names) => {

@@ -27,10 +27,13 @@ api.interceptors.request.use(
 
     // Log request in development
     if (process.env.NODE_ENV === 'development') {
-      console.log(`📤 ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`, {
-        params: config.params,
-        data: config.data instanceof FormData ? '[FormData]' : config.data,
-      });
+      console.log(
+        `📤 ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`,
+        {
+          params: config.params,
+          data: config.data instanceof FormData ? '[FormData]' : config.data,
+        },
+      );
     }
 
     return config;
@@ -54,8 +57,10 @@ api.interceptors.response.use(
           dataStructure: {
             hasData: !!response.data.data,
             hasPagination: !!response.data.pagination,
-            dataType: Array.isArray(response.data.data) ? 'array' : typeof response.data.data
-          }
+            dataType: Array.isArray(response.data.data)
+              ? 'array'
+              : typeof response.data.data,
+          },
         },
       );
     }
@@ -63,7 +68,7 @@ api.interceptors.response.use(
     return response;
   },
   async (error) => {
-    const originalRequest = error.config;
+    // const originalRequest = error.config; // Kept in case you add token refresh logic
 
     // Log error in development
     if (process.env.NODE_ENV === 'development') {
@@ -90,23 +95,17 @@ api.interceptors.response.use(
 
         case 401:
           // Unauthorized - Token expired or invalid
-          if (!originalRequest._retry) {
-            originalRequest._retry = true;
-
-            // Clear auth data
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-
-            // Redirect to login (only if not already on login page)
-            if (
-              window.location.pathname !== '/login' &&
-              window.location.pathname !== '/register'
-            ) {
-              window.location.href = '/login?expired=true';
-            }
-
+          // --- START FIX ---
+          // Let the AuthContext or service handle the 401 logic (like logout).
+          // We just format the message based on the code from the backend (auth.js).
+          if (data?.code === 'TOKEN_EXPIRED') {
             error.message = 'Session expired. Please login again.';
+          } else if (data?.code === 'TOKEN_INVALID') {
+            error.message = 'Invalid token. Please login again.';
+          } else {
+            error.message = data?.message || 'Authentication failed.';
           }
+          // --- END FIX ---
           break;
 
         case 403:
@@ -312,7 +311,6 @@ export const retryRequest = async (fn, retries = 3, delay = 1000) => {
     throw error;
   }
 };
-
 
 // Helper to batch requests
 export const batchRequests = async (requests, batchSize = 5) => {

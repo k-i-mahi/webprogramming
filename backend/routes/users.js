@@ -11,7 +11,7 @@ const {
   getNearbyUsers,
   toggleUserActive,
   changeUserRole,
-  getUserActivity,
+  // getUserActivity, // --- FIX: Removed
   getUserStats,
   getAuthorities,
 } = require('../controllers/userController');
@@ -85,7 +85,7 @@ router.get(
       .withMessage('Valid longitude required'),
     query('radius')
       .optional()
-      .isInt({ min: 100, max: 100000 })
+      .isInt({ min: 100, max: 100000 }) // 100m to 100km
       .withMessage('Radius must be between 100 and 100000 meters'),
   ],
   validate,
@@ -114,26 +114,11 @@ router.get(
   getUserStats,
 );
 
-// @route   GET /api/users/:id/activity
-// @desc    Get user activity history
-// @access  Private
-router.get(
-  '/:id/activity',
-  protect,
-  [
-    param('id').isMongoId().withMessage('Valid user ID required'),
-    query('page')
-      .optional()
-      .isInt({ min: 1 })
-      .withMessage('Page must be a positive integer'),
-    query('limit')
-      .optional()
-      .isInt({ min: 1, max: 100 })
-      .withMessage('Limit must be between 1 and 100'),
-  ],
-  validate,
-  getUserActivity,
-);
+// --- START FIX ---
+// @route   GET /api/users/:id/activity (REMOVED)
+// @desc    This route is redundant. Use /api/activities/users/:userId instead.
+// router.get( ... ) // Route removed
+// --- END FIX ---
 
 // @route   PUT /api/users/:id
 // @desc    Update user
@@ -191,11 +176,13 @@ router.put(
   updateUser,
 );
 
-// @route   PATCH /api/users/:id/toggle-active
+// --- START FIX ---
+// @route   PATCH /api/users/:id/toggle-status
 // @desc    Toggle user active status
 // @access  Private/Admin
 router.patch(
-  '/:id/toggle-active',
+  '/:id/toggle-status', // Changed from /toggle-active
+  // --- END FIX ---
   protect,
   isAdmin,
   [param('id').isMongoId().withMessage('Valid user ID required')],

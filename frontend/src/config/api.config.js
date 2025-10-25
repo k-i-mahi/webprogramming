@@ -34,7 +34,10 @@ export const API_ENDPOINTS = {
     DETAIL: (id) => `/users/${id}`,
     UPDATE: (id) => `/users/${id}`,
     DELETE: (id) => `/users/${id}`,
-    STATS: '/users/stats',
+    // --- START FIX ---
+    STATS: (id) => `/users/${id}/stats`, // Was: '/users/stats'
+    NEARBY: '/users/nearby', // Added
+    // --- END FIX ---
     TOGGLE_STATUS: (id) => `/users/${id}/toggle-status`,
     BULK_UPDATE: '/users/bulk-update',
     EXPORT: '/users/export',
@@ -103,8 +106,7 @@ export const API_ENDPOINTS = {
 
     // Following
     FOLLOW: (issueId) => `/interactions/issues/${issueId}/follow`,
-    FOLLOW_STATUS: (issueId) =>
-      `/interactions/issues/${issueId}/follow/status`,
+    FOLLOW_STATUS: (issueId) => `/interactions/issues/${issueId}/follow/status`,
     FOLLOWED_ISSUES: '/interactions/followed-issues',
     FOLLOWER_COUNT: (issueId) =>
       `/interactions/issues/${issueId}/followers/count`,
@@ -151,7 +153,13 @@ export const API_ENDPOINTS = {
     GEOCODE: '/location/geocode',
     REVERSE_GEOCODE: '/location/reverse-geocode',
     DISTANCE: '/location/distance',
-    NEARBY: '/location/nearby',
+    NEARBY_ISSUES: '/location/issues/nearby', // ✅ FIXED
+    ISSUES_BOUNDS: '/location/issues/bounds', // ✅ FIXED
+    HEATMAP: '/location/heatmap', // ✅ FIXED
+    STATS: '/location/stats', // ✅ FIXED
+    // --- START FIX ---
+    // NEARBY_USERS: '/location/users/nearby', // Removed, (Moved to USERS)
+    // --- END FIX ---
     VALIDATE: '/location/validate',
   },
 

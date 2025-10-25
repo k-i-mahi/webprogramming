@@ -13,23 +13,86 @@ const Analytics = () => {
   const { error: showError } = useToast();
 
   const [loading, setLoading] = useState(true);
-  const [timeRange, setTimeRange] = useState('month'); // week, month, quarter, year
+  const [timeRange, setTimeRange] = useState('month');
   const [stats, setStats] = useState(null);
   const [categoryStats, setCategoryStats] = useState([]);
   const [trendData, setTrendData] = useState([]);
 
-  // Memoize loadAnalytics to prevent recreating on every render
   const loadAnalytics = useCallback(async () => {
     try {
       setLoading(true);
 
       // Load overall statistics
-      const statsResponse = await issueService.getIssueStats();
-      setStats(statsResponse.data);
+      try {
+        const statsResponse = await issueService.getIssueStats();
+        console.log('📊 Issue stats response:', statsResponse);
+
+        // Extract data from response (handle both formats)
+        const statsData = statsResponse?.data || statsResponse;
+
+        // Ensure we have the correct structure
+        const formattedStats = {
+          overall: {
+            total: statsData?.overall?.total || 0,
+            open: statsData?.overall?.open || 0,
+            inProgress: statsData?.overall?.inProgress || 0,
+            resolved: statsData?.overall?.resolved || 0,
+            closed: statsData?.overall?.closed || 0,
+          },
+          byStatus: statsData?.byStatus || {},
+          byPriority: statsData?.byPriority || {},
+          byCategory: statsData?.byCategory || [],
+        };
+
+        setStats(formattedStats);
+      } catch (statsError) {
+        console.error('Issue stats error:', statsError);
+        // Set default stats structure if API fails
+        setStats({
+          overall: {
+            total: 0,
+            open: 0,
+            inProgress: 0,
+            resolved: 0,
+            closed: 0,
+          },
+          byStatus: {},
+          byPriority: {},
+          byCategory: [],
+        });
+      }
 
       // Load category statistics
-      const categoryResponse = await categoryService.getAllCategoriesStats();
-      setCategoryStats(categoryResponse.data || []);
+      try {
+        const categoryResponse = await categoryService.getAllCategoriesStats();
+        console.log('📂 Category stats response:', categoryResponse);
+
+        // Extract data from response
+        const categoryData = categoryResponse?.data || [];
+
+        // Format category stats to include total count
+        const formattedCategories = (
+          Array.isArray(categoryData) ? categoryData : []
+        ).map((cat) => ({
+          _id: cat._id,
+          id: cat._id,
+          name: cat.name,
+          displayName: cat.displayName || cat.name,
+          icon: cat.icon || '📁',
+          color: cat.color || '#667eea',
+          total: cat.total || 0,
+          open: cat.open || 0,
+          inProgress: cat.inProgress || 0,
+          resolved: cat.resolved || 0,
+          closed: cat.closed || 0,
+          issueCount: cat.total || 0,
+        }));
+
+        setCategoryStats(formattedCategories);
+      } catch (categoryError) {
+        console.error('Category stats error:', categoryError);
+        setCategoryStats([]);
+      }
 
       // Mock trend data (replace with real API call if available)
       setTrendData([
@@ -44,11 +107,11 @@ const Analytics = () => {
     } finally {
       setLoading(false);
     }
-  }, [showError]); // Only recreate if showError changes
+  }, [showError]);
 
   useEffect(() => {
     loadAnalytics();
-  }, [timeRange, loadAnalytics]); // Include loadAnalytics in dependencies
+  }, [timeRange, loadAnalytics]);
 
   const getStatusPercentage = (status) => {
     if (!stats?.overall) return 0;
@@ -295,27 +358,31 @@ const Analytics = () => {
         </div>
 
         {/* Category Statistics */}
-        <Card className="category-stats-card" padding="large">
-          <h3 className="card-title">Issues by Category</h3>
-          <div className="category-stats-grid">
-            {categoryStats.slice(0, 8).map((cat) => (
-              <div key={cat._id} className="category-stat-item">
-                <div
-                  className="category-stat-icon"
-                  style={{ background: cat.color }}
-                >
-                  {cat.icon}
-                </div>
-                <div className="category-stat-content">
-                  <div className="category-stat-name">{cat.displayName}</div>
-                  <div className="category-stat-count">
-                    {cat.issueCount || 0} issues
+        {categoryStats && categoryStats.length > 0 && (
+          <Card className="category-stats-card" padding="large">
+            <h3 className="card-title">Issues by Category</h3>
+            <div className="category-stats-grid">
+              {categoryStats.slice(0, 8).map((cat) => (
+                <div key={cat._id || cat.id} className="category-stat-item">
+                  <div
+                    className="category-stat-icon"
+                    style={{ background: cat.color || '#667eea' }}
+                  >
+                    {cat.icon || '📁'}
+                  </div>
+                  <div className="category-stat-content">
+                    <div className="category-stat-name">
+                      {cat.displayName || cat.name}
+                    </div>
+                    <div className="category-stat-count">
+                      {cat.issueCount || cat.total || 0} issues
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </Card>
+              ))}
+            </div>
+          </Card>
+        )}
 
         {/* Trend Chart */}
         <Card className="trend-card" padding="large">

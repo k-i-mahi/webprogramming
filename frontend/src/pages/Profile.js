@@ -14,7 +14,7 @@ const Profile = () => {
   const { success, error: showError } = useToast();
 
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('profile'); // profile, settings, password, stats
+  const [activeTab, setActiveTab] = useState('profile');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [userStats, setUserStats] = useState(null);
 
@@ -41,10 +41,26 @@ const Profile = () => {
     loadUserStats();
   }, []);
 
+  // Update profileData when user changes
+  useEffect(() => {
+    if (user) {
+      setProfileData({
+        name: user.name || '',
+        email: user.email || '',
+        gender: user.gender || '',
+        dateOfBirth: user.dateOfBirth?.split('T')[0] || '',
+        profession: user.profession || '',
+        latitude: user.location?.latitude || '',
+        longitude: user.location?.longitude || '',
+        address: user.location?.address || '',
+      });
+    }
+  }, [user]);
+
   const loadUserStats = async () => {
     try {
-      const response = await authService.getUserStats();
-      setUserStats(response.data);
+      const stats = await authService.getUserStats();
+      setUserStats(stats);
     } catch (error) {
       console.error('Load stats error:', error);
     }
@@ -136,9 +152,33 @@ const Profile = () => {
 
     try {
       setLoading(true);
-      await updateUser(profileData);
+
+      // Prepare data for submission
+      const updateData = {
+        name: profileData.name,
+        email: profileData.email,
+        gender: profileData.gender || null,
+        profession: profileData.profession || '',
+      };
+
+      // Add date of birth if provided
+      if (profileData.dateOfBirth) {
+        updateData.dateOfBirth = profileData.dateOfBirth;
+      }
+
+      // Add location if both latitude and longitude are provided
+      if (profileData.latitude && profileData.longitude) {
+        updateData.latitude = parseFloat(profileData.latitude);
+        updateData.longitude = parseFloat(profileData.longitude);
+        if (profileData.address) {
+          updateData.address = profileData.address;
+        }
+      }
+
+      await updateUser(updateData);
       success('Profile updated successfully');
     } catch (error) {
+      console.error('Profile update error:', error);
       showError(error.message || 'Failed to update profile');
     } finally {
       setLoading(false);
@@ -165,6 +205,7 @@ const Profile = () => {
         newPassword: '',
         confirmPassword: '',
       });
+      setErrors({});
     } catch (error) {
       showError(error.message || 'Failed to change password');
     } finally {
@@ -389,7 +430,7 @@ const Profile = () => {
                     </div>
 
                     <div className="stat-card">
-                      <div className="stat-icon stat-icon-info">🔓</div>
+                      <div className="stat-icon stat-icon-info">🔔</div>
                       <div className="stat-content">
                         <div className="stat-value">
                           {userStats.issues?.open || 0}

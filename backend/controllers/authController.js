@@ -4,6 +4,29 @@ const Interaction = require('../models/Interaction');
 const { validationResult } = require('express-validator');
 const jwt = require('jsonwebtoken');
 
+// Helper function to format user data for responses
+// Converts GeoJSON [lon, lat] to { latitude, longitude } for the frontend
+const formatUserResponse = (user) => {
+  if (!user) return null;
+
+  // Ensure we are working with a plain object
+  const userData = user.toObject ? user.toObject() : { ...user };
+
+  // Denormalize location for the frontend
+  if (userData.location && userData.location.coordinates) {
+    userData.location = {
+      latitude: userData.location.coordinates[1], // Get latitude from index 1
+      longitude: userData.location.coordinates[0], // Get longitude from index 0
+      address: userData.location.address || '',
+    };
+  }
+
+  // Ensure password is never sent
+  delete userData.password;
+
+  return userData;
+};
+
 // Generate JWT token
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -34,6 +57,7 @@ const register = async (req, res) => {
       profession,
       latitude,
       longitude,
+      address,
       avatar,
     } = req.body;
 
@@ -54,8 +78,27 @@ const register = async (req, res) => {
       });
     }
 
-    // Create user
-    const user = await User.create({
+    const lat = parseFloat(latitude);
+    const lon = parseFloat(longitude);
+
+    // Validate coordinates
+    if (
+      isNaN(lat) ||
+      isNaN(lon) ||
+      lat < -90 ||
+      lat > 90 ||
+      lon < -180 ||
+      lon > 180
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'Invalid coordinates. Latitude must be between -90 and 90, longitude between -180 and 180',
+      });
+    }
+
+    // Create user data object
+    const userData = {
       name,
       email,
       password,
@@ -64,29 +107,25 @@ const register = async (req, res) => {
       dateOfBirth: dateOfBirth || null,
       profession: profession || '',
       location: {
-        latitude: parseFloat(latitude),
-        longitude: parseFloat(longitude),
+        type: 'Point',
+        coordinates: [lon, lat], // [longitude, latitude] for GeoJSON
       },
       avatar: avatar || '',
-    });
+    };
+
+    // Add address if provided
+    if (address) {
+      userData.location.address = address;
+    }
+
+    // Create user
+    const user = await User.create(userData);
 
     if (user) {
       res.status(201).json({
         success: true,
         message: 'User registered successfully',
-        data: {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          gender: user.gender,
-          dateOfBirth: user.dateOfBirth,
-          profession: user.profession,
-          location: user.location,
-          avatar: user.avatar,
-          isActive: user.isActive,
-          createdAt: user.createdAt,
-        },
+        data: formatUserResponse(user),
         token: generateToken(user._id),
       });
     } else {
@@ -155,18 +194,7 @@ const login = async (req, res) => {
     res.json({
       success: true,
       message: 'Login successful',
-      data: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        gender: user.gender,
-        dateOfBirth: user.dateOfBirth,
-        profession: user.profession,
-        location: user.location,
-        avatar: user.avatar,
-        isActive: user.isActive,
-      },
+      data: formatUserResponse(user),
       token: generateToken(user._id),
     });
   } catch (error) {
@@ -194,20 +222,7 @@ const getMe = async (req, res) => {
 
     res.json({
       success: true,
-      data: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        gender: user.gender,
-        dateOfBirth: user.dateOfBirth,
-        profession: user.profession,
-        location: user.location,
-        avatar: user.avatar,
-        isActive: user.isActive,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
-      },
+      data: formatUserResponse(user),
     });
   } catch (error) {
     console.error('Get user error:', error);
@@ -219,7 +234,7 @@ const getMe = async (req, res) => {
 };
 
 // @desc    Update user profile
-// @route   PUT /api/auth/update
+// @route   PUT /api/auth/updateprofile
 // @access  Private
 const updateProfile = async (req, res) => {
   try {
@@ -234,27 +249,138 @@ const updateProfile = async (req, res) => {
 
     const {
       name,
+      email,
       gender,
       dateOfBirth,
       profession,
       latitude,
       longitude,
+      address,
       avatar,
     } = req.body;
 
-    // Update allowed fields only (email cannot be changed here)
-    if (name !== undefined) user.name = name;
-    if (gender !== undefined) user.gender = gender;
-    if (dateOfBirth !== undefined) user.dateOfBirth = dateOfBirth;
-    if (profession !== undefined) user.profession = profession;
-    if (avatar !== undefined) user.avatar = avatar;
+    // Update name if provided
+    if (name !== undefined) {
+      if (!name.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Name is required',
+        });
+      }
+      user.name = name.trim();
+    }
+
+    // Update email if provided
+    if (email !== undefined) {
+      if (!email.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email is required',
+        });
+      }
+      // Check if email is already taken by another user
+      if (email !== user.email) {
+        const existingUser = await User.findOne({ email: email.toLowerCase() });
+        if (
+          existingUser &&
+          existingUser._id.toString() !== user._id.toString()
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: 'Email is already taken',
+          });
+        }
+      }
+      user.email = email.toLowerCase().trim();
+    }
+
+    // Update gender
+    if (gender !== undefined) {
+      if (gender === null || gender === '') {
+        user.gender = null;
+      } else if (['male', 'female', 'other'].includes(gender)) {
+        user.gender = gender;
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Gender must be male, female, or other',
+        });
+      }
+    }
+
+    // Update date of birth
+    if (dateOfBirth !== undefined) {
+      if (dateOfBirth === null || dateOfBirth === '') {
+        user.dateOfBirth = null;
+      } else {
+        const date = new Date(dateOfBirth);
+        if (isNaN(date.getTime())) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid date of birth',
+          });
+        }
+        // Check if date is not in the future
+        if (date > new Date()) {
+          return res.status(400).json({
+            success: false,
+            message: 'Date of birth cannot be in the future',
+          });
+        }
+        user.dateOfBirth = date;
+      }
+    }
+
+    // Update profession
+    if (profession !== undefined) {
+      if (profession === null || profession === '') {
+        user.profession = '';
+      } else if (typeof profession === 'string') {
+        if (profession.length > 100) {
+          return res.status(400).json({
+            success: false,
+            message: 'Profession cannot exceed 100 characters',
+          });
+        }
+        user.profession = profession.trim();
+      }
+    }
+
+    // Update avatar
+    if (avatar !== undefined) {
+      user.avatar = avatar;
+    }
 
     // Update location if provided
     if (latitude !== undefined && longitude !== undefined) {
+      const lat = parseFloat(latitude);
+      const lon = parseFloat(longitude);
+
+      // Validate coordinates
+      if (isNaN(lat) || isNaN(lon)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid coordinates format',
+        });
+      }
+
+      if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+        return res.status(400).json({
+          success: false,
+          message:
+            'Coordinates out of range. Latitude: -90 to 90, Longitude: -180 to 180',
+        });
+      }
+
       user.location = {
-        latitude: parseFloat(latitude),
-        longitude: parseFloat(longitude),
+        type: 'Point',
+        coordinates: [lon, lat], // [longitude, latitude] for GeoJSON
       };
+
+      // Add address if provided
+      if (address !== undefined) {
+        user.location.address = address;
+      }
     }
 
     await user.save();
@@ -262,30 +388,28 @@ const updateProfile = async (req, res) => {
     res.json({
       success: true,
       message: 'Profile updated successfully',
-      data: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        gender: user.gender,
-        dateOfBirth: user.dateOfBirth,
-        profession: user.profession,
-        location: user.location,
-        avatar: user.avatar,
-        updatedAt: user.updatedAt,
-      },
+      data: formatUserResponse(user),
     });
   } catch (error) {
     console.error('Update profile error:', error);
+
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email already exists',
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Server error during profile update',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
   }
 };
 
 // @desc    Change password
-// @route   PUT /api/auth/password
+// @route   PUT /api/auth/updatepassword
 // @access  Private
 const changePassword = async (req, res) => {
   try {
@@ -322,6 +446,15 @@ const changePassword = async (req, res) => {
       return res.status(401).json({
         success: false,
         message: 'Current password is incorrect',
+      });
+    }
+
+    // Check if new password is same as current
+    const isSame = await user.comparePassword(newPassword);
+    if (isSame) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be different from current password',
       });
     }
 

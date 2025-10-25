@@ -89,10 +89,15 @@ const Home = () => {
     return `${Math.floor(seconds / 86400)}d ago`;
   };
 
+  // --- START FIX ---
+  // This redirect was preventing logged-in users from seeing the home page.
+  /*
   if (isAuthenticated) {
     navigate('/dashboard');
     return null;
   }
+  */
+  // --- END FIX ---
 
   return (
     <div className="home-container">
@@ -118,15 +123,27 @@ const Home = () => {
             track progress, and make a real difference.
           </p>
 
+          {/* --- START FIX --- */}
+          {/* Conditionally show Dashboard or Auth buttons */}
           <div className="hero-actions">
-            <Link to="/register" className="btn btn-primary btn-large">
-              Get Started
-              <span className="btn-arrow">→</span>
-            </Link>
-            <Link to="/login" className="btn btn-outline btn-large">
-              Sign In
-            </Link>
+            {isAuthenticated ? (
+              <Link to="/dashboard" className="btn btn-primary btn-large">
+                Go to Dashboard
+                <span className="btn-arrow">→</span>
+              </Link>
+            ) : (
+              <>
+                <Link to="/register" className="btn btn-primary btn-large">
+                  Get Started
+                  <span className="btn-arrow">→</span>
+                </Link>
+                <Link to="/login" className="btn btn-outline btn-large">
+                  Sign In
+                </Link>
+              </>
+            )}
           </div>
+          {/* --- END FIX --- */}
 
           {/* Stats */}
           <div className="hero-stats">
@@ -252,9 +269,18 @@ const Home = () => {
           </div>
 
           <div className="section-actions">
-            <Link to="/register" className="btn btn-primary">
-              Join to See More →
-            </Link>
+            {/* --- START FIX --- */}
+            {/* Conditionally show Dashboard or Auth button */}
+            {isAuthenticated ? (
+              <Link to="/issues" className="btn btn-primary">
+                See All Issues →
+              </Link>
+            ) : (
+              <Link to="/register" className="btn btn-primary">
+                Join to See More →
+              </Link>
+            )}
+            {/* --- END FIX --- */}
           </div>
         </section>
       )}
@@ -267,14 +293,23 @@ const Home = () => {
             Join thousands of community members making their neighborhoods
             better
           </p>
+          {/* --- START FIX --- */}
+          {/* Conditionally show Dashboard or Auth buttons */}
           <div className="cta-actions">
-            <Link to="/register" className="btn btn-primary btn-large">
-              Create Free Account
-            </Link>
+            {isAuthenticated ? (
+              <Link to="/dashboard" className="btn btn-primary btn-large">
+                View Your Dashboard
+              </Link>
+            ) : (
+              <Link to="/register" className="btn btn-primary btn-large">
+                Create Free Account
+              </Link>
+            )}
             <Link to="/about" className="btn btn-outline btn-large">
               Learn More
             </Link>
           </div>
+          {/* --- END FIX --- */}
         </div>
       </section>
 

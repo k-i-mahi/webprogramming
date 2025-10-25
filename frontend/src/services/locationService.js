@@ -1,6 +1,28 @@
+// src/services/locationService.js
 import api from './api';
 import { API_ENDPOINTS } from '../config/api.config';
 
+/**
+ * Internal helpers (declared first so we can use them anywhere)
+ */
+const toRadians = (degrees) => degrees * (Math.PI / 180);
+const toDegrees = (radians) => radians * (180 / Math.PI);
+
+const clamp = (v, min, max) => {
+  const n = Number(v);
+  if (Number.isNaN(n)) return min;
+  return Math.min(Math.max(n, min), max);
+};
+
+const safeParseFloat = (v, fallback = null) => {
+  if (typeof v === 'undefined' || v === null || v === '') return fallback;
+  const n = parseFloat(v);
+  return Number.isNaN(n) ? fallback : n;
+};
+
+/**
+ * locationService
+ */
 const locationService = {
   // ============================================
   // GEOCODING
@@ -8,14 +30,19 @@ const locationService = {
 
   /**
    * Geocode address to coordinates
-   * @param {string} address - Address to geocode
-   * @returns {Promise}
+   * @param {string} address
+   * @returns {Promise<Object>}
    */
   geocode: async (address) => {
     try {
       const response = await api.get(API_ENDPOINTS.LOCATION.GEOCODE, {
         params: { address },
       });
+      console.log('📍 Geocode response:', {
+        address,
+        resultCount: response.data?.data?.length ?? 0,
+      });
+      // Assuming backend returns { success, data: [{ lat, lng, address }] }
       return response.data;
     } catch (error) {
       console.error('Geocode error:', error);
@@ -25,15 +52,21 @@ const locationService = {
 
   /**
    * Reverse geocode coordinates to address
-   * @param {number} latitude - Latitude
-   * @param {number} longitude - Longitude
-   * @returns {Promise}
+   * @param {number} latitude
+   * @param {number} longitude
+   * @returns {Promise<Object>}
    */
   reverseGeocode: async (latitude, longitude) => {
     try {
       const response = await api.get(API_ENDPOINTS.LOCATION.REVERSE_GEOCODE, {
         params: { latitude, longitude },
       });
+      console.log('📍 Reverse geocode:', {
+        latitude,
+        longitude,
+        data: !!response.data?.data?.address, // Check if address exists
+      });
+      // Assuming backend returns { success, data: { address, city, ... } }
       return response.data;
     } catch (error) {
       console.error('Reverse geocode error:', error);
@@ -42,31 +75,33 @@ const locationService = {
   },
 
   // ============================================
-  // GEOLOCATION
+  // GEOLOCATION (browser)
   // ============================================
 
   /**
    * Get current position using browser geolocation
-   * @param {Object} options - Geolocation options
-   * @returns {Promise}
+   * @param {Object} options
+   * @returns {Promise<Object>}
    */
   getCurrentPosition: (options = {}) => {
+    const defaultOptions = {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+      ...options,
+    };
+
     return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
+      if (!navigator?.geolocation) {
         reject(new Error('Geolocation is not supported by this browser'));
         return;
       }
 
-      const defaultOptions = {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-        ...options,
-      };
+      console.log('📍 Getting current position...');
 
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          resolve({
+          const result = {
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
             accuracy: position.coords.accuracy,
@@ -75,7 +110,9 @@ const locationService = {
             heading: position.coords.heading,
             speed: position.coords.speed,
             timestamp: position.timestamp,
-          });
+          };
+          console.log('✅ Position obtained:', result);
+          resolve(result);
         },
         (error) => {
           let message = 'Failed to get location';
@@ -93,6 +130,7 @@ const locationService = {
               message = 'An unknown error occurred';
               break;
           }
+          console.error('❌ Geolocation error:', message);
           reject(new Error(message));
         },
         defaultOptions,
@@ -102,17 +140,12 @@ const locationService = {
 
   /**
    * Watch position changes
-   * @param {Function} successCallback - Success callback
-   * @param {Function} errorCallback - Error callback
-   * @param {Object} options - Geolocation options
-   * @returns {number} Watch ID
+   * @param {Function} successCallback
+   * @param {Function} errorCallback
+   * @param {Object} options
+   * @returns {number|null} Watch ID or null if unsupported
    */
   watchPosition: (successCallback, errorCallback, options = {}) => {
-    if (!navigator.geolocation) {
-      errorCallback(new Error('Geolocation is not supported'));
-      return null;
-    }
-
     const defaultOptions = {
       enableHighAccuracy: true,
       timeout: 10000,
@@ -120,7 +153,12 @@ const locationService = {
       ...options,
     };
 
-    return navigator.geolocation.watchPosition(
+    if (!navigator?.geolocation) {
+      errorCallback(new Error('Geolocation is not supported'));
+      return null;
+    }
+
+    const watchId = navigator.geolocation.watchPosition(
       (position) => {
         successCallback({
           latitude: position.coords.latitude,
@@ -130,18 +168,21 @@ const locationService = {
         });
       },
       (error) => {
+        console.error('watchPosition error:', error);
         errorCallback(error);
       },
       defaultOptions,
     );
+
+    return watchId;
   },
 
   /**
    * Clear watch position
-   * @param {number} watchId - Watch ID to clear
+   * @param {number} watchId
    */
   clearWatch: (watchId) => {
-    if (watchId && navigator.geolocation) {
+    if (watchId && navigator?.geolocation) {
       navigator.geolocation.clearWatch(watchId);
     }
   },
@@ -151,12 +192,12 @@ const locationService = {
   // ============================================
 
   /**
-   * Calculate distance between two points
-   * @param {number} lat1 - Latitude 1
-   * @param {number} lng1 - Longitude 1
-   * @param {number} lat2 - Latitude 2
-   * @param {number} lng2 - Longitude 2
-   * @returns {Promise}
+   * Calculate distance (server-side)
+   * @param {number} lat1
+   * @param {number} lng1
+   * @param {number} lat2
+   * @param {number} lng2
+   * @returns {Promise<Object>} { success, data: { distanceKm, distanceMiles } }
    */
   calculateDistance: async (lat1, lng1, lat2, lng2) => {
     try {
@@ -171,63 +212,131 @@ const locationService = {
   },
 
   /**
-   * Calculate distance using Haversine formula (client-side)
-   * @param {number} lat1 - Latitude 1
-   * @param {number} lng1 - Longitude 1
-   * @param {number} lat2 - Latitude 2
-   * @param {number} lng2 - Longitude 2
-   * @returns {number} Distance in kilometers
+   * Calculate distance (client-side Haversine) in kilometers
+   * @returns {number} distance in km
    */
   calculateDistanceLocal: (lat1, lng1, lat2, lng2) => {
     const R = 6371; // Earth's radius in km
-    const dLat = locationService.toRadians(lat2 - lat1);
-    const dLng = locationService.toRadians(lng2 - lng1);
+    const dLat = toRadians(lat2 - lat1);
+    const dLng = toRadians(lng2 - lng1);
 
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(locationService.toRadians(lat1)) *
-        Math.cos(locationService.toRadians(lat2)) *
+      Math.cos(toRadians(lat1)) *
+        Math.cos(toRadians(lat2)) *
         Math.sin(dLng / 2) *
         Math.sin(dLng / 2);
 
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distance = R * c;
-
-    return distance; // in kilometers
+    return distance;
   },
 
   /**
-   * Get nearby locations
-   * @param {number} latitude - Latitude
-   * @param {number} longitude - Longitude
-   * @param {number} radius - Radius in kilometers
-   * @param {Object} filters - Additional filters
-   * @returns {Promise}
+   * Get nearby locations (wrapper for backend endpoint)
+   * Normalizes response to { data, meta }
+   * @param {number} latitude
+   * @param {number} longitude
+   * @param {number} radius (in km)
+   * @param {Object} filters (status, category, priority, etc.)
+   * @returns {Promise<{data: Array, meta: Object}>}
    */
   getNearbyLocations: async (latitude, longitude, radius = 5, filters = {}) => {
     try {
-      const response = await api.get(API_ENDPOINTS.LOCATION.NEARBY, {
+      console.log('📍 Fetching nearby issues:', {
+        latitude,
+        longitude,
+        radius,
+        filters,
+      });
+
+      // Use the specific nearby issues endpoint
+      const response = await api.get(API_ENDPOINTS.LOCATION.NEARBY_ISSUES, {
         params: { latitude, longitude, radius, ...filters },
       });
-      return response.data;
+
+      const data = response.data?.data ?? [];
+      const meta = response.data?.meta ?? {};
+
+      console.log('✅ Nearby issues response:', { count: data.length, meta });
+
+      return { data, meta };
     } catch (error) {
       console.error('Get nearby locations error:', error);
       throw error;
     }
   },
 
+  // --- START FIX ---
+  /**
+   * Get issues within specific map bounds
+   * @param {Object} bounds { swLat, swLng, neLat, neLng }
+   * @param {Object} filters (status, category, priority, etc.)
+   * @returns {Promise<{data: Array, meta: Object}>}
+   */
+  getIssuesInBounds: async (bounds, filters = {}) => {
+    try {
+      if (
+        !bounds?.swLat ||
+        !bounds?.swLng ||
+        !bounds?.neLat ||
+        !bounds?.neLng
+      ) {
+        throw new Error('Invalid bounds object provided');
+      }
+      console.log('📍 Fetching issues in bounds:', { bounds, filters });
+
+      const params = {
+        swLat: bounds.swLat,
+        swLng: bounds.swLng,
+        neLat: bounds.neLat,
+        neLng: bounds.neLng,
+        ...filters,
+        limit: 1000, // Fetch a reasonable limit for map display
+      };
+
+      const response = await api.get(API_ENDPOINTS.LOCATION.ISSUES_BOUNDS, {
+        params,
+      });
+
+      const data = response.data?.data ?? [];
+      const meta = response.data?.meta ?? {};
+
+      console.log('✅ Issues in bounds response:', {
+        count: data.length,
+        meta,
+      });
+      return { data, meta };
+    } catch (error) {
+      console.error('Get issues in bounds error:', error);
+      throw error;
+    }
+  },
+  // --- END FIX ---
+
   // ============================================
   // VALIDATION
   // ============================================
 
   /**
-   * Validate coordinates
-   * @param {number} latitude - Latitude
-   * @param {number} longitude - Longitude
-   * @returns {Promise}
+   * Validate coordinates (server-side, if endpoint exists)
+   * @param {number} latitude
+   * @param {number} longitude
+   * @returns {Promise<Object>} { success, data: { isValid } }
    */
   validateCoordinates: async (latitude, longitude) => {
     try {
+      // Ensure endpoint exists before calling
+      if (!API_ENDPOINTS.LOCATION.VALIDATE) {
+        console.warn('validateCoordinates: Backend endpoint not configured.');
+        // Fallback to client-side validation
+        return {
+          success: true,
+          data: {
+            isValid: locationService.isValidCoordinates(latitude, longitude),
+          },
+        };
+      }
       const response = await api.get(API_ENDPOINTS.LOCATION.VALIDATE, {
         params: { latitude, longitude },
       });
@@ -240,14 +349,16 @@ const locationService = {
 
   /**
    * Validate coordinates (client-side)
-   * @param {number} latitude - Latitude
-   * @param {number} longitude - Longitude
+   * @param {number} latitude
+   * @param {number} longitude
    * @returns {boolean}
    */
   isValidCoordinates: (latitude, longitude) => {
     return (
       typeof latitude === 'number' &&
       typeof longitude === 'number' &&
+      !isNaN(latitude) && // Added NaN check
+      !isNaN(longitude) && // Added NaN check
       latitude >= -90 &&
       latitude <= 90 &&
       longitude >= -180 &&
@@ -256,8 +367,8 @@ const locationService = {
   },
 
   /**
-   * Validate address format
-   * @param {string} address - Address to validate
+   * Validate address (client-side basic check)
+   * @param {string} address
    * @returns {boolean}
    */
   isValidAddress: (address) => {
@@ -269,200 +380,231 @@ const locationService = {
   // ============================================
 
   /**
-   * Format coordinates
-   * @param {number} latitude - Latitude
-   * @param {number} longitude - Longitude
-   * @param {number} precision - Decimal precision
-   * @returns {string}
+   * Format coordinates string
+   * @param {number} latitude
+   * @param {number} longitude
+   * @param {number} precision
+   * @returns {string} e.g., "40.712800, -74.006000"
    */
   formatCoordinates: (latitude, longitude, precision = 6) => {
-    return `${latitude.toFixed(precision)}, ${longitude.toFixed(precision)}`;
+    if (typeof latitude !== 'number' || typeof longitude !== 'number')
+      return '';
+    const lat = safeParseFloat(latitude);
+    const lng = safeParseFloat(longitude);
+    if (lat === null || lng === null) return '';
+    return `${lat.toFixed(precision)}, ${lng.toFixed(precision)}`;
   },
 
   /**
-   * Format distance
-   * @param {number} distance - Distance in kilometers
-   * @param {string} unit - Unit ('km' or 'mi')
-   * @returns {string}
+   * Format distance with units
+   * @param {number} distance in km
+   * @param {string} unit ('km', 'mi')
+   * @returns {string} e.g., "1.23 km", "500 m", "0.76 mi", "123 ft"
    */
   formatDistance: (distance, unit = 'km') => {
+    const distKm = safeParseFloat(distance);
+    if (distKm === null) return '';
+
     if (unit === 'mi') {
-      const miles = distance * 0.621371;
+      const miles = distKm * 0.621371;
       return miles < 0.1
         ? `${Math.round(miles * 5280)} ft`
         : `${miles.toFixed(2)} mi`;
     }
-
-    return distance < 1
-      ? `${Math.round(distance * 1000)} m`
-      : `${distance.toFixed(2)} km`;
+    // Default to km/m
+    return distKm < 1
+      ? `${Math.round(distKm * 1000)} m`
+      : `${distKm.toFixed(2)} km`;
   },
 
   /**
-   * Format location object
-   * @param {Object} location - Location object
-   * @returns {Object}
+   * Format location object for display
+   * @param {Object} location (can have lat/lng or latitude/longitude)
+   * @returns {Object|null} standardized location object or null
    */
   formatLocation: (location) => {
+    if (!location || typeof location !== 'object') return null;
+    const lat = safeParseFloat(location.latitude ?? location.lat);
+    const lng = safeParseFloat(location.longitude ?? location.lng);
+
+    if (lat === null || lng === null) return null; // Invalid coordinates
+
     return {
-      latitude: location.latitude || location.lat,
-      longitude: location.longitude || location.lng,
-      address: location.address || '',
-      city: location.city || '',
-      state: location.state || '',
-      country: location.country || '',
-      postalCode: location.postalCode || location.zip || '',
-      formatted: location.formatted_address || location.address,
+      latitude: lat,
+      longitude: lng,
+      address: location.address ?? location.formatted_address ?? '',
+      city: location.city ?? '',
+      state: location.state ?? '',
+      country: location.country ?? '',
+      postalCode: location.postalCode ?? location.zip ?? '',
+      // Provides a fallback display address if formatted isn't available
+      formatted:
+        location.formatted_address ??
+        location.address ??
+        locationService.formatCoordinates(lat, lng, 4),
     };
   },
 
   // ============================================
   // HELPER FUNCTIONS
   // ============================================
+  toRadians, // exported for convenience
+  toDegrees, // exported for convenience
 
   /**
-   * Convert degrees to radians
-   * @param {number} degrees - Degrees
-   * @returns {number}
-   */
-  toRadians: (degrees) => {
-    return degrees * (Math.PI / 180);
-  },
-
-  /**
-   * Convert radians to degrees
-   * @param {number} radians - Radians
-   * @returns {number}
-   */
-  toDegrees: (radians) => {
-    return radians * (180 / Math.PI);
-  },
-
-  /**
-   * Get bounds for a given center and radius
-   * @param {number} latitude - Center latitude
-   * @param {number} longitude - Center longitude
-   * @param {number} radius - Radius in kilometers
-   * @returns {Object}
+   * Calculate bounding box around a center point
+   * @param {number} latitude in degrees
+   * @param {number} longitude in degrees
+   * @param {number} radius in km
+   * @returns {Object|null} { minLat, maxLat, minLng, maxLng } or null
    */
   getBounds: (latitude, longitude, radius) => {
-    const lat = locationService.toRadians(latitude);
-    const lng = locationService.toRadians(longitude);
-    const r = radius / 6371; // Earth radius in km
+    const lat = safeParseFloat(latitude);
+    const lng = safeParseFloat(longitude);
+    const radKm = safeParseFloat(radius, 1); // Default radius 1km
 
-    const minLat = lat - r;
-    const maxLat = lat + r;
+    if (lat === null || lng === null || radKm === null || radKm <= 0) {
+      return null;
+    }
 
-    const deltaLng = Math.asin(Math.sin(r) / Math.cos(lat));
-    const minLng = lng - deltaLng;
-    const maxLng = lng + deltaLng;
+    const R = 6371; // Earth radius in km
+    const radDist = radKm / R; // Angular distance in radians
+    const radLat = toRadians(lat);
+    const radLng = toRadians(lng);
+
+    let minLat = radLat - radDist;
+    let maxLat = radLat + radDist;
+
+    let minLng, maxLng;
+    if (minLat > -Math.PI / 2 && maxLat < Math.PI / 2) {
+      const deltaLng = Math.asin(Math.sin(radDist) / Math.cos(radLat));
+      minLng = radLng - deltaLng;
+      if (minLng < -Math.PI) minLng += 2 * Math.PI;
+      maxLng = radLng + deltaLng;
+      if (maxLng > Math.PI) maxLng -= 2 * Math.PI;
+    } else {
+      // Pole crossing
+      minLat = Math.max(minLat, -Math.PI / 2);
+      maxLat = Math.min(maxLat, Math.PI / 2);
+      minLng = -Math.PI;
+      maxLng = Math.PI;
+    }
 
     return {
-      minLatitude: locationService.toDegrees(minLat),
-      maxLatitude: locationService.toDegrees(maxLat),
-      minLongitude: locationService.toDegrees(minLng),
-      maxLongitude: locationService.toDegrees(maxLng),
+      swLat: toDegrees(minLat),
+      swLng: toDegrees(minLng),
+      neLat: toDegrees(maxLat),
+      neLng: toDegrees(maxLng),
     };
   },
 
   /**
-   * Get center point from multiple coordinates
-   * @param {Array} coordinates - Array of {lat, lng} objects
-   * @returns {Object}
+   * Calculate the center point of multiple coordinates
+   * @param {Array<Object>} coordinates [{ lat, lng } or { latitude, longitude }]
+   * @returns {Object|null} { latitude, longitude } or null
    */
   getCenterPoint: (coordinates) => {
-    if (!coordinates || coordinates.length === 0) {
-      return null;
-    }
+    if (!Array.isArray(coordinates) || coordinates.length === 0) return null;
 
-    if (coordinates.length === 1) {
-      return {
-        latitude: coordinates[0].lat || coordinates[0].latitude,
-        longitude: coordinates[0].lng || coordinates[0].longitude,
-      };
-    }
+    const validCoords = coordinates
+      .map((coord) => ({
+        lat: safeParseFloat(coord.lat ?? coord.latitude),
+        lng: safeParseFloat(coord.lng ?? coord.longitude),
+      }))
+      .filter((c) => c.lat !== null && c.lng !== null);
+
+    if (validCoords.length === 0) return null;
+    if (validCoords.length === 1)
+      return { latitude: validCoords[0].lat, longitude: validCoords[0].lng };
 
     let x = 0,
       y = 0,
       z = 0;
-
-    coordinates.forEach((coord) => {
-      const lat = locationService.toRadians(coord.lat || coord.latitude);
-      const lng = locationService.toRadians(coord.lng || coord.longitude);
-
-      x += Math.cos(lat) * Math.cos(lng);
-      y += Math.cos(lat) * Math.sin(lng);
-      z += Math.sin(lat);
+    validCoords.forEach((coord) => {
+      const radLat = toRadians(coord.lat);
+      const radLng = toRadians(coord.lng);
+      x += Math.cos(radLat) * Math.cos(radLng);
+      y += Math.cos(radLat) * Math.sin(radLng);
+      z += Math.sin(radLat);
     });
 
-    const total = coordinates.length;
+    const total = validCoords.length;
     x /= total;
     y /= total;
     z /= total;
 
     const centralLng = Math.atan2(y, x);
-    const centralSquareRoot = Math.sqrt(x * x + y * y);
-    const centralLat = Math.atan2(z, centralSquareRoot);
+    const centralHyp = Math.sqrt(x * x + y * y);
+    const centralLat = Math.atan2(z, centralHyp);
 
     return {
-      latitude: locationService.toDegrees(centralLat),
-      longitude: locationService.toDegrees(centralLng),
+      latitude: toDegrees(centralLat),
+      longitude: toDegrees(centralLng),
     };
   },
 
   /**
-   * Check if point is within radius
-   * @param {number} lat1 - Point latitude
-   * @param {number} lng1 - Point longitude
-   * @param {number} lat2 - Center latitude
-   * @param {number} lng2 - Center longitude
-   * @param {number} radius - Radius in kilometers
+   * Check if point is within radius (km) of another point
+   * @param {number} lat1
+   * @param {number} lng1
+   * @param {number} lat2
+   * @param {number} lng2
+   * @param {number} radius in km
    * @returns {boolean}
    */
   isWithinRadius: (lat1, lng1, lat2, lng2, radius) => {
+    const rKm = safeParseFloat(radius);
+    if (rKm === null || rKm < 0) return false;
     const distance = locationService.calculateDistanceLocal(
       lat1,
       lng1,
       lat2,
       lng2,
     );
-    return distance <= radius;
+    return distance <= rKm;
   },
 
   /**
-   * Sort locations by distance
-   * @param {Array} locations - Array of locations with lat/lng
-   * @param {number} centerLat - Center latitude
-   * @param {number} centerLng - Center longitude
-   * @returns {Array}
+   * Sort locations by distance from a center point
+   * @param {Array<Object>} locations [{ latitude, longitude } or { lat, lng }]
+   * @param {number} centerLat
+   * @param {number} centerLng
+   * @returns {Array<Object>} locations with added 'distanceKm' property, sorted
    */
   sortByDistance: (locations, centerLat, centerLng) => {
+    if (!Array.isArray(locations)) return [];
     return locations
-      .map((location) => ({
-        ...location,
-        distance: locationService.calculateDistanceLocal(
-          centerLat,
-          centerLng,
-          location.latitude || location.lat,
-          location.longitude || location.lng,
-        ),
-      }))
-      .sort((a, b) => a.distance - b.distance);
+      .map((location) => {
+        const lat = safeParseFloat(location.latitude ?? location.lat);
+        const lng = safeParseFloat(location.longitude ?? location.lng);
+        const distanceKm =
+          lat !== null && lng !== null
+            ? locationService.calculateDistanceLocal(
+                centerLat,
+                centerLng,
+                lat,
+                lng,
+              )
+            : Infinity; // Put invalid locations last
+        return { ...location, distanceKm };
+      })
+      .sort((a, b) => a.distanceKm - b.distanceKm);
   },
 
   /**
-   * Filter locations by radius
-   * @param {Array} locations - Array of locations
-   * @param {number} centerLat - Center latitude
-   * @param {number} centerLng - Center longitude
-   * @param {number} radius - Radius in kilometers
-   * @returns {Array}
+   * Filter locations within a radius (km)
+   * @param {Array<Object>} locations
+   * @param {number} centerLat
+   * @param {number} centerLng
+   * @param {number} radius in km
+   * @returns {Array<Object>} filtered locations
    */
   filterByRadius: (locations, centerLat, centerLng, radius) => {
+    if (!Array.isArray(locations)) return [];
     return locations.filter((location) =>
       locationService.isWithinRadius(
-        location.latitude || location.lat,
-        location.longitude || location.lng,
+        location.latitude ?? location.lat,
+        location.longitude ?? location.lng,
         centerLat,
         centerLng,
         radius,
@@ -474,67 +616,66 @@ const locationService = {
   // MAP HELPERS
   // ============================================
 
-  /**
-   * Generate Google Maps URL
-   * @param {number} latitude - Latitude
-   * @param {number} longitude - Longitude
-   * @param {number} zoom - Zoom level
-   * @returns {string}
-   */
+  /** Get Google Maps URL for a point */
   getGoogleMapsUrl: (latitude, longitude, zoom = 15) => {
-    return `https://www.google.com/maps?q=${latitude},${longitude}&z=${zoom}`;
+    const lat = safeParseFloat(latitude);
+    const lng = safeParseFloat(longitude);
+    if (lat === null || lng === null) return '';
+    return `https://www.google.com/maps?q=${lat},${lng}&z=${clamp(
+      zoom,
+      1,
+      21,
+      15,
+    )}`;
   },
 
-  /**
-   * Generate Google Maps directions URL
-   * @param {Object} origin - Origin coordinates {lat, lng}
-   * @param {Object} destination - Destination coordinates {lat, lng}
-   * @returns {string}
-   */
+  /** Get Google Maps directions URL */
   getDirectionsUrl: (origin, destination) => {
-    return `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}`;
+    const oLat = safeParseFloat(origin.lat ?? origin.latitude);
+    const oLng = safeParseFloat(origin.lng ?? origin.longitude);
+    const dLat = safeParseFloat(destination.lat ?? destination.latitude);
+    const dLng = safeParseFloat(destination.lng ?? destination.longitude);
+    if (oLat === null || oLng === null || dLat === null || dLng === null)
+      return '';
+    return `https://www.google.com/maps/dir/?api=1&origin=${oLat},${oLng}&destination=${dLat},${dLng}`;
   },
 
-  /**
-   * Generate static map image URL
-   * @param {number} latitude - Latitude
-   * @param {number} longitude - Longitude
-   * @param {Object} options - Map options (zoom, size, markers)
-   * @returns {string}
-   */
+  /** Get Google Static Map URL */
   getStaticMapUrl: (latitude, longitude, options = {}) => {
+    const lat = safeParseFloat(latitude);
+    const lng = safeParseFloat(longitude);
+    if (lat === null || lng === null) return '';
+
     const {
       zoom = 15,
       width = 600,
       height = 400,
       marker = true,
-      apiKey = process.env.REACT_APP_GOOGLE_MAPS_API_KEY,
+      apiKey = process.env.REACT_APP_GOOGLE_MAPS_API_KEY, // Ensure this env var is set
     } = options;
 
-    let url = `https://maps.googleapis.com/maps/api/staticmap?center=${latitude},${longitude}&zoom=${zoom}&size=${width}x${height}`;
+    let url = `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${clamp(
+      zoom,
+      1,
+      21,
+      15,
+    )}&size=${clamp(width, 10, 1024, 600)}x${clamp(height, 10, 1024, 400)}`;
 
-    if (marker) {
-      url += `&markers=color:red%7C${latitude},${longitude}`;
-    }
-
-    if (apiKey) {
-      url += `&key=${apiKey}`;
-    }
+    if (marker) url += `&markers=color:red%7C${lat},${lng}`;
+    if (apiKey) url += `&key=${apiKey}`;
+    else console.warn('Static Map URL: Google Maps API key not provided.');
 
     return url;
   },
 
   // ============================================
-  // STORAGE
+  // STORAGE (localStorage helpers)
   // ============================================
 
-  /**
-   * Save location to local storage
-   * @param {string} key - Storage key
-   * @param {Object} location - Location object
-   */
+  /** Save location data to localStorage */
   saveLocation: (key, location) => {
     try {
+      if (!key || !location) return;
       localStorage.setItem(
         `location_${key}`,
         JSON.stringify({
@@ -547,59 +688,51 @@ const locationService = {
     }
   },
 
-  /**
-   * Get location from local storage
-   * @param {string} key - Storage key
-   * @param {number} maxAge - Maximum age in milliseconds
-   * @returns {Object|null}
-   */
+  /** Get saved location from localStorage, checking expiry */
   getSavedLocation: (key, maxAge = 3600000) => {
+    // Default maxAge 1 hour
     try {
+      if (!key) return null;
       const saved = localStorage.getItem(`location_${key}`);
       if (!saved) return null;
 
       const location = JSON.parse(saved);
-
-      // Check if expired
-      if (maxAge && Date.now() - location.timestamp > maxAge) {
-        localStorage.removeItem(`location_${key}`);
+      if (!location || !location.timestamp) {
+        localStorage.removeItem(`location_${key}`); // Clear invalid data
         return null;
       }
 
+      if (maxAge && Date.now() - location.timestamp > maxAge) {
+        localStorage.removeItem(`location_${key}`); // Expired
+        return null;
+      }
       return location;
     } catch (error) {
       console.error('Get saved location error:', error);
+      // Attempt to clear potentially corrupt item
+      try {
+        localStorage.removeItem(`location_${key}`);
+      } catch (e) {}
       return null;
     }
   },
 
-  /**
-   * Clear saved location
-   * @param {string} key - Storage key
-   */
+  /** Clear saved location */
   clearSavedLocation: (key) => {
     try {
+      if (!key) return;
       localStorage.removeItem(`location_${key}`);
     } catch (error) {
       console.error('Clear saved location error:', error);
     }
   },
 
-  /**
-   * Get last known location
-   * @returns {Object|null}
-   */
-  getLastKnownLocation: () => {
-    return locationService.getSavedLocation('last_known');
-  },
+  /** Get last known location */
+  getLastKnownLocation: () => locationService.getSavedLocation('last_known'),
 
-  /**
-   * Save last known location
-   * @param {Object} location - Location object
-   */
-  saveLastKnownLocation: (location) => {
-    locationService.saveLocation('last_known', location);
-  },
+  /** Save last known location */
+  saveLastKnownLocation: (location) =>
+    locationService.saveLocation('last_known', location),
 };
 
 export default locationService;

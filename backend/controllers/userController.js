@@ -3,6 +3,29 @@ const Issue = require('../models/Issue');
 const Interaction = require('../models/Interaction');
 const Activity = require('../models/Activity');
 
+// Helper function to format user data for responses
+// Converts GeoJSON [lon, lat] to { latitude, longitude } for the frontend
+const formatUserResponse = (user) => {
+  if (!user) return null;
+
+  // Ensure we are working with a plain object
+  const userData = user.toObject ? user.toObject() : { ...user };
+
+  // Denormalize location for the frontend
+  if (userData.location && userData.location.coordinates) {
+    userData.location = {
+      latitude: userData.location.coordinates[1], // Get latitude from index 1
+      longitude: userData.location.coordinates[0], // Get longitude from index 0
+      address: userData.location.address || '',
+    };
+  }
+
+  // Ensure password is never sent
+  delete userData.password;
+
+  return userData;
+};
+
 // @desc    Get all users
 // @route   GET /api/users
 // @access  Private/Admin
@@ -43,7 +66,7 @@ const getUsers = async (req, res) => {
 
     res.json({
       success: true,
-      data: users,
+      data: users.map(formatUserResponse),
       pagination: {
         total,
         totalPages: Math.ceil(total / limit),
@@ -138,10 +161,12 @@ const getUserById = async (req, res) => {
       },
     ]);
 
+    const formattedUser = formatUserResponse(user);
+
     res.json({
       success: true,
       data: {
-        ...user.toObject(),
+        ...formattedUser,
         statistics: {
           issues: issueStats[0] || {
             totalReported: 0,
@@ -197,6 +222,7 @@ const updateUser = async (req, res) => {
       avatar,
       latitude,
       longitude,
+      address,
       role,
       gender,
       dateOfBirth,
@@ -210,12 +236,36 @@ const updateUser = async (req, res) => {
     if (email !== undefined) updateData.email = email;
     if (avatar !== undefined) updateData.avatar = avatar;
 
-    // Add location if provided
+    // Add location if provided, using correct GeoJSON format
     if (latitude !== undefined && longitude !== undefined) {
+      const lat = parseFloat(latitude);
+      const lon = parseFloat(longitude);
+
+      // Validate coordinates
+      if (
+        isNaN(lat) ||
+        isNaN(lon) ||
+        lat < -90 ||
+        lat > 90 ||
+        lon < -180 ||
+        lon > 180
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            'Invalid coordinates. Latitude must be between -90 and 90, longitude between -180 and 180',
+        });
+      }
+
       updateData.location = {
-        latitude: parseFloat(latitude),
-        longitude: parseFloat(longitude),
+        type: 'Point',
+        coordinates: [lon, lat], // [longitude, latitude] for GeoJSON
       };
+
+      // Add address if provided
+      if (address !== undefined) {
+        updateData.location.address = address;
+      }
     }
 
     // Add new profile fields if provided
@@ -281,7 +331,7 @@ const updateUser = async (req, res) => {
     res.json({
       success: true,
       message: 'User updated successfully',
-      data: updatedUser,
+      data: formatUserResponse(updatedUser),
     });
   } catch (error) {
     console.error('Update user error:', error);
@@ -380,40 +430,46 @@ const getNearbyUsers = async (req, res) => {
 
     const lat = parseFloat(latitude);
     const lon = parseFloat(longitude);
-    const radiusInDegrees = parseInt(radius) / 111320; // Convert meters to degrees (approximate)
+    const maxDistance = parseInt(radius); // in meters
 
+    // Validate coordinates
+    if (
+      isNaN(lat) ||
+      isNaN(lon) ||
+      lat < -90 ||
+      lat > 90 ||
+      lon < -180 ||
+      lon > 180
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid coordinates',
+      });
+    }
+
+    // Use $near with the 2dsphere index for efficient geospatial query
     const users = await User.find({
-      'location.latitude': {
-        $gte: lat - radiusInDegrees,
-        $lte: lat + radiusInDegrees,
-      },
-      'location.longitude': {
-        $gte: lon - radiusInDegrees,
-        $lte: lon + radiusInDegrees,
+      location: {
+        $near: {
+          $geometry: {
+            type: 'Point',
+            coordinates: [lon, lat], // [longitude, latitude]
+          },
+          $maxDistance: maxDistance, // Max distance in meters
+        },
       },
       _id: { $ne: req.user._id }, // Exclude current user
       isActive: true,
     }).select('name email avatar role profession location');
 
-    // Further filter by actual distance using Haversine formula
-    const filteredUsers = users.filter((user) => {
-      const distance = calculateDistance(
-        lat,
-        lon,
-        user.location.latitude,
-        user.location.longitude,
-      );
-      return distance <= parseInt(radius);
-    });
-
     res.json({
       success: true,
-      data: filteredUsers,
-      count: filteredUsers.length,
+      data: users.map(formatUserResponse),
+      count: users.length,
       searchParams: {
         latitude: lat,
         longitude: lon,
-        radius: parseInt(radius),
+        radius: maxDistance,
       },
     });
   } catch (error) {
@@ -425,24 +481,8 @@ const getNearbyUsers = async (req, res) => {
   }
 };
 
-// Helper function to calculate distance between two coordinates (Haversine formula)
-const calculateDistance = (lat1, lon1, lat2, lon2) => {
-  const R = 6371e3; // Earth's radius in meters
-  const φ1 = (lat1 * Math.PI) / 180;
-  const φ2 = (lat2 * Math.PI) / 180;
-  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
-
-  const a =
-    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return R * c; // Distance in meters
-};
-
 // @desc    Toggle user active status
-// @route   PATCH /api/users/:id/toggle-active
+// @route   PATCH /api/users/:id/toggle-status
 // @access  Private/Admin
 const toggleUserActive = async (req, res) => {
   try {
@@ -471,12 +511,7 @@ const toggleUserActive = async (req, res) => {
       message: `User ${
         user.isActive ? 'activated' : 'deactivated'
       } successfully`,
-      data: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        isActive: user.isActive,
-      },
+      data: formatUserResponse(user),
     });
   } catch (error) {
     console.error('Toggle user active error:', error);
@@ -538,61 +573,6 @@ const changeUserRole = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error',
-    });
-  }
-};
-
-// @desc    Get user activity history
-// @route   GET /api/users/:id/activity
-// @access  Private
-const getUserActivity = async (req, res) => {
-  try {
-    const { page = 1, limit = 20 } = req.query;
-
-    const user = await User.findById(req.params.id);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found',
-      });
-    }
-
-    // Only user themselves or admin can view activity
-    if (req.user.id !== req.params.id && req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to view this activity',
-      });
-    }
-
-    const activities = await Activity.find({ user: user._id })
-      .populate('issue', 'title status category')
-      .populate({
-        path: 'issue',
-        populate: { path: 'category', select: 'name displayName icon' },
-      })
-      .sort({ createdAt: -1 })
-      .limit(parseInt(limit))
-      .skip((page - 1) * limit);
-
-    const total = await Activity.countDocuments({ user: user._id });
-
-    res.json({
-      success: true,
-      data: activities,
-      pagination: {
-        total,
-        totalPages: Math.ceil(total / limit),
-        currentPage: parseInt(page),
-        limit: parseInt(limit),
-      },
-    });
-  } catch (error) {
-    console.error('Get user activity error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error fetching activity',
     });
   }
 };
@@ -660,6 +640,25 @@ const getUserStats = async (req, res) => {
               ],
             },
           },
+          open: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$status', 'open'] },
+                    {
+                      $or: [
+                        { $eq: ['$reportedBy', user._id] },
+                        { $eq: ['$assignedTo', user._id] },
+                      ],
+                    },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
         },
       },
     ]);
@@ -703,6 +702,7 @@ const getUserStats = async (req, res) => {
           totalAssigned: 0,
           resolved: 0,
           inProgress: 0,
+          open: 0,
         },
         interactions: {
           comments:
@@ -734,7 +734,7 @@ const getAuthorities = async (req, res) => {
 
     res.json({
       success: true,
-      data: authorities,
+      data: authorities.map(formatUserResponse),
       count: authorities.length,
     });
   } catch (error) {
@@ -754,7 +754,6 @@ module.exports = {
   getNearbyUsers,
   toggleUserActive,
   changeUserRole,
-  getUserActivity,
   getUserStats,
   getAuthorities,
 };

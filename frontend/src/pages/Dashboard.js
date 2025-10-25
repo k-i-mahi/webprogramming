@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import issueService from '../services/issueService';
 import categoryService from '../services/categoryService';
-import authService from '../services/authService';
+import authService from '../services/authService'; // This service is correct
 import Card from '../components/Card';
 import Badge from '../components/Badge';
 import Feedback from '../components/Feedback';
@@ -12,7 +12,7 @@ import IssueDetailModal from '../components/IssueDetailModal';
 import './Dashboard.css';
 
 const Dashboard = () => {
-  const { user } = useAuth();
+  const { user, getUserStats } = useAuth(); // Get getUserStats from context
   const { success, error: showError } = useToast();
   const navigate = useNavigate();
 
@@ -38,15 +38,18 @@ const Dashboard = () => {
     try {
       setLoading(true);
 
+      // --- START FIX ---
       // Load user stats
-      const statsResponse = await authService.getUserStats();
+      // getUserStats() from AuthContext returns the stats object directly
+      const statsResponse = await getUserStats();
       setStats({
-        totalIssues: statsResponse.data.issues.totalReported || 0,
-        myIssues: statsResponse.data.issues.totalReported || 0,
-        resolved: statsResponse.data.issues.resolved || 0,
-        inProgress: statsResponse.data.issues.inProgress || 0,
-        open: statsResponse.data.issues.open || 0,
+        totalIssues: statsResponse.issues.totalReported || 0,
+        myIssues: statsResponse.issues.totalReported || 0,
+        resolved: statsResponse.issues.resolved || 0,
+        inProgress: statsResponse.issues.inProgress || 0,
+        open: statsResponse.issues.open || 0,
       });
+      // --- END FIX ---
 
       // Load recent issues (all)
       const recentResponse = await issueService.getIssues({

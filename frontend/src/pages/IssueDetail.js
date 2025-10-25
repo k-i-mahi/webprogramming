@@ -30,9 +30,16 @@ const IssueDetail = () => {
     try {
       setLoading(true);
       const response = await issueService.getIssueById(id);
-      setIssue(response.data);
+      // Handle response format from service
+      const issueData = response?.data || response;
+      setIssue(issueData);
     } catch (err) {
-      showError(err.message || 'Failed to load issue details');
+      console.error('Load issue error:', err);
+      showError(
+        err?.response?.data?.message ||
+          err?.message ||
+          'Failed to load issue details',
+      );
     } finally {
       setLoading(false);
     }
@@ -70,10 +77,15 @@ const IssueDetail = () => {
     if (!user) return showError('Please login to vote');
     try {
       const response = await issueService.voteOnIssue(id, voteType);
-      setIssue(response.data);
+      // Handle response format
+      const updatedIssue = response?.data || response;
+      setIssue(updatedIssue);
       success('Vote recorded');
     } catch (err) {
-      showError(err.message || 'Failed to vote');
+      console.error('Vote error:', err);
+      showError(
+        err?.response?.data?.message || err?.message || 'Failed to vote',
+      );
     }
   };
 
@@ -82,10 +94,17 @@ const IssueDetail = () => {
     if (!user) return showError('Please login to follow');
     try {
       const response = await issueService.toggleFollow(id);
-      setIssue(response.data);
+      // Handle response format
+      const updatedIssue = response?.data || response;
+      setIssue(updatedIssue);
       success(isFollowing ? 'Unfollowed issue' : 'Following issue');
     } catch (err) {
-      showError(err.message || 'Failed to update follow status');
+      console.error('Toggle follow error:', err);
+      showError(
+        err?.response?.data?.message ||
+          err?.message ||
+          'Failed to update follow status',
+      );
     }
   };
 
@@ -97,11 +116,16 @@ const IssueDetail = () => {
     try {
       setIsCommenting(true);
       const response = await issueService.addComment(id, commentText.trim());
-      setIssue(response.data);
+      // Backend returns the new comment, not the full issue
+      // So we need to reload the issue
+      await loadIssueDetails();
       setCommentText('');
       success('Comment added');
     } catch (err) {
-      showError(err.message || 'Failed to add comment');
+      console.error('Add comment error:', err);
+      showError(
+        err?.response?.data?.message || err?.message || 'Failed to add comment',
+      );
     } finally {
       setIsCommenting(false);
     }
@@ -110,19 +134,30 @@ const IssueDetail = () => {
   // Status change
   const handleStatusChange = async (e) => {
     e.preventDefault();
+    if (!newStatus) {
+      showError('Please select a status');
+      return;
+    }
     try {
       const response = await issueService.changeStatus(
         id,
         newStatus,
         statusReason,
       );
-      setIssue(response.data);
+      // Handle response format
+      const updatedIssue = response?.data || response;
+      setIssue(updatedIssue);
       setShowStatusModal(false);
       setNewStatus('');
       setStatusReason('');
       success('Status updated');
     } catch (err) {
-      showError('Failed to update status');
+      console.error('Status change error:', err);
+      showError(
+        err?.response?.data?.message ||
+          err?.message ||
+          'Failed to update status',
+      );
     }
   };
 
@@ -133,7 +168,12 @@ const IssueDetail = () => {
       success('Issue deleted');
       navigate('/issues');
     } catch (err) {
-      showError('Failed to delete issue');
+      console.error('Delete error:', err);
+      showError(
+        err?.response?.data?.message ||
+          err?.message ||
+          'Failed to delete issue',
+      );
     }
   };
 
@@ -144,7 +184,8 @@ const IssueDetail = () => {
   const canChangeStatus =
     user &&
     (user.role === 'admin' ||
-      (user.role === 'authority' && issue?.assignedTo?._id === user._id));
+      user.role === 'authority' ||
+      issue?.assignedTo?._id === user._id);
 
   const getTimeAgo = (date) => {
     const seconds = Math.floor((new Date() - new Date(date)) / 1000);
@@ -183,42 +224,58 @@ const IssueDetail = () => {
             </div>
           </div>
 
-          {canEdit && (
-            <div className="issue-actions">
-              <button onClick={() => navigate(`/issues/${id}/edit`)}>
-                ✏️ Edit
-              </button>
-              {canDelete && (
-                <button onClick={() => setShowDeleteConfirm(true)}>
-                  🗑️ Delete
-                </button>
-              )}
-            </div>
-          )}
-
           <div className="issue-action-buttons">
             <button
-              className={voteStatus.voteType === 'upvote' ? 'active' : ''}
+              className={`action-btn ${
+                voteStatus.voteType === 'upvote' ? 'active' : ''
+              }`}
               onClick={() => handleVote('upvote')}
+              disabled={!user}
             >
               👍 {issue.stats?.upvotes || 0}
             </button>
             <button
-              className={voteStatus.voteType === 'downvote' ? 'active' : ''}
+              className={`action-btn ${
+                voteStatus.voteType === 'downvote' ? 'active' : ''
+              }`}
               onClick={() => handleVote('downvote')}
+              disabled={!user}
             >
               👎 {issue.stats?.downvotes || 0}
             </button>
             <button
-              className={isFollowing ? 'active' : ''}
+              className={`action-btn ${isFollowing ? 'active' : ''}`}
               onClick={handleToggleFollow}
+              disabled={!user}
             >
               {isFollowing ? '★ Following' : '☆ Follow'}
             </button>
-            <span>👁 {issue.stats?.views || 0}</span>
+            <span className="stat-display">👁 {issue.stats?.views || 0}</span>
+
+            {canEdit && (
+              <button
+                className="action-btn edit"
+                onClick={() => navigate(`/issues/${id}/edit`)}
+              >
+                ✏️ Edit
+              </button>
+            )}
+
             {canChangeStatus && (
-              <button onClick={() => setShowStatusModal(true)}>
+              <button
+                className="action-btn status"
+                onClick={() => setShowStatusModal(true)}
+              >
                 Change Status
+              </button>
+            )}
+
+            {canDelete && (
+              <button
+                className="action-btn delete"
+                onClick={() => setShowDeleteConfirm(true)}
+              >
+                🗑️ Delete
               </button>
             )}
           </div>
@@ -236,7 +293,8 @@ const IssueDetail = () => {
             className={activeTab === 'comments' ? 'active' : ''}
             onClick={() => setActiveTab('comments')}
           >
-            Comments ({issue.stats?.commentCount || 0})
+            Comments ({issue.stats?.commentCount || issue.comments?.length || 0}
+            )
           </button>
           <button
             className={activeTab === 'activity' ? 'active' : ''}
@@ -257,41 +315,59 @@ const IssueDetail = () => {
                 </div>
               )}
               <h3>Description</h3>
-              <p>{issue.description}</p>
+              <p className="issue-description">{issue.description}</p>
 
               <h3>Information</h3>
               <div className="details-grid">
-                <div>Category: {issue.category?.displayName}</div>
-                <div>
-                  Reported By:{' '}
-                  <Avatar
-                    src={issue.reportedBy?.avatar}
-                    name={issue.reportedBy?.name}
-                  />{' '}
-                  {issue.reportedBy?.name}
+                <div className="detail-item">
+                  <strong>Category:</strong>{' '}
+                  {issue.category?.displayName || 'N/A'}
+                </div>
+                <div className="detail-item">
+                  <strong>Reported By:</strong>
+                  {issue.reportedBy && (
+                    <>
+                      <Avatar
+                        src={issue.reportedBy?.avatar}
+                        name={issue.reportedBy?.name}
+                        size="small"
+                      />
+                      <span>{issue.reportedBy?.name}</span>
+                    </>
+                  )}
                 </div>
                 {issue.assignedTo && (
-                  <div>
-                    Assigned To:{' '}
+                  <div className="detail-item">
+                    <strong>Assigned To:</strong>
                     <Avatar
                       src={issue.assignedTo.avatar}
                       name={issue.assignedTo.name}
-                    />{' '}
-                    {issue.assignedTo.name}
+                      size="small"
+                    />
+                    <span>{issue.assignedTo.name}</span>
                   </div>
                 )}
-                <div>Location: {issue.location?.address || 'N/A'}</div>
-                <div>Created: {getTimeAgo(issue.createdAt)}</div>
-                <div>Updated: {getTimeAgo(issue.updatedAt)}</div>
+                <div className="detail-item">
+                  <strong>Location:</strong> {issue.location?.address || 'N/A'}
+                </div>
+                <div className="detail-item">
+                  <strong>Created:</strong> {getTimeAgo(issue.createdAt)}
+                </div>
+                <div className="detail-item">
+                  <strong>Updated:</strong> {getTimeAgo(issue.updatedAt)}
+                </div>
               </div>
 
               {issue.tags?.length > 0 && (
-                <div className="tags-list">
-                  {issue.tags.map((t, i) => (
-                    <span key={i} className="tag">
-                      {t}
-                    </span>
-                  ))}
+                <div className="tags-section">
+                  <h3>Tags</h3>
+                  <div className="tags-list">
+                    {issue.tags.map((t, i) => (
+                      <span key={i} className="tag">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -300,51 +376,117 @@ const IssueDetail = () => {
           {activeTab === 'comments' && (
             <div className="comments-tab">
               {user && (
-                <form onSubmit={handleAddComment}>
+                <form onSubmit={handleAddComment} className="comment-form">
                   <textarea
                     value={commentText}
                     onChange={(e) => setCommentText(e.target.value)}
-                    placeholder="Add comment..."
+                    placeholder="Add a comment..."
+                    rows="4"
                   />
                   <button
                     type="submit"
                     disabled={isCommenting || !commentText.trim()}
+                    className="btn btn-primary"
                   >
                     {isCommenting ? 'Posting...' : 'Post Comment'}
                   </button>
                 </form>
               )}
+
+              {!user && (
+                <div className="login-prompt">
+                  <p>
+                    Please <Link to="/login">login</Link> to add comments
+                  </p>
+                </div>
+              )}
+
               {issue.comments?.length === 0 ? (
-                <Feedback type="empty" title="No Comments" />
+                <Feedback
+                  type="empty"
+                  title="No Comments"
+                  message="Be the first to comment on this issue"
+                />
               ) : (
-                issue.comments.map((c) => (
-                  <div key={c._id} className="comment-item">
-                    <Avatar src={c.user?.avatar} name={c.user?.name} />
-                    <div>
-                      <strong>{c.user?.name}</strong> ·{' '}
-                      {getTimeAgo(c.createdAt)}
-                      <p>{c.commentText}</p>
+                <div className="comments-list">
+                  {issue.comments?.map((c) => (
+                    <div key={c._id} className="comment-item">
+                      <Avatar
+                        src={c.user?.avatar}
+                        name={c.user?.name}
+                        size="medium"
+                      />
+                      <div className="comment-content">
+                        <div className="comment-header">
+                          <strong className="comment-author">
+                            {c.user?.name}
+                          </strong>
+                          <span className="comment-time">
+                            · {getTimeAgo(c.createdAt)}
+                          </span>
+                          {c.user?.role && (
+                            <Badge
+                              type="custom"
+                              value={c.user.role}
+                              size="small"
+                            />
+                          )}
+                        </div>
+                        <p className="comment-text">{c.commentText}</p>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  ))}
+                </div>
               )}
             </div>
           )}
 
           {activeTab === 'activity' && (
             <div className="activity-tab">
-              {issue.activities?.length === 0 ? (
-                <Feedback type="empty" title="No Activity" />
+              {!issue.activities || issue.activities.length === 0 ? (
+                <Feedback
+                  type="empty"
+                  title="No Activity"
+                  message="No activity recorded for this issue yet"
+                />
               ) : (
-                issue.activities.map((a) => (
-                  <div key={a._id} className="activity-item">
-                    <span>
-                      {a.user?.name} {a.action.replace('_', ' ')} ·{' '}
-                      {getTimeAgo(a.createdAt)}
-                    </span>
-                    {a.reason && <p>{a.reason}</p>}
-                  </div>
-                ))
+                <div className="activity-list">
+                  {issue.activities.map((a) => (
+                    <div key={a._id} className="activity-item">
+                      <div className="activity-icon">
+                        {a.action === 'created' && '➕'}
+                        {a.action === 'updated' && '✏️'}
+                        {a.action === 'commented' && '💬'}
+                        {a.action === 'voted' && '👍'}
+                        {a.action === 'status_changed' && '🔄'}
+                        {a.action === 'assigned' && '👤'}
+                        {![
+                          'created',
+                          'updated',
+                          'commented',
+                          'voted',
+                          'status_changed',
+                          'assigned',
+                        ].includes(a.action) && '📌'}
+                      </div>
+                      <div className="activity-content">
+                        <div className="activity-header">
+                          <strong>{a.user?.name || 'Unknown User'}</strong>
+                          <span className="activity-action">
+                            {' '}
+                            {a.description || a.action.replace('_', ' ')}
+                          </span>
+                        </div>
+                        <span className="activity-time">
+                          {getTimeAgo(a.createdAt)}
+                        </span>
+                        {a.metadata?.reason && (
+                          <p className="activity-reason">{a.metadata.reason}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           )}
@@ -356,7 +498,7 @@ const IssueDetail = () => {
         onClose={() => setShowDeleteConfirm(false)}
         onConfirm={handleDelete}
         title="Delete Issue"
-        message="Are you sure you want to delete this issue?"
+        message="Are you sure you want to delete this issue? This action cannot be undone."
         confirmText="Delete"
         cancelText="Cancel"
         type="danger"
@@ -365,30 +507,72 @@ const IssueDetail = () => {
       {showStatusModal && (
         <Modal
           isOpen={showStatusModal}
-          onClose={() => setShowStatusModal(false)}
+          onClose={() => {
+            setShowStatusModal(false);
+            setNewStatus('');
+            setStatusReason('');
+          }}
           title="Change Status"
+          size="medium"
+          footer={
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowStatusModal(false);
+                  setNewStatus('');
+                  setStatusReason('');
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleStatusChange}
+                disabled={!newStatus}
+              >
+                Update Status
+              </button>
+            </>
+          }
         >
-          <form onSubmit={handleStatusChange}>
-            <select
-              value={newStatus}
-              onChange={(e) => setNewStatus(e.target.value)}
-              required
-            >
-              <option value="">Select Status</option>
-              <option value="open">Open</option>
-              <option value="in-progress">In Progress</option>
-              <option value="resolved">Resolved</option>
-              <option value="closed">Closed</option>
-              {user?.role === 'admin' && (
-                <option value="rejected">Rejected</option>
-              )}
-            </select>
-            <textarea
-              placeholder="Reason (optional)"
-              value={statusReason}
-              onChange={(e) => setStatusReason(e.target.value)}
-            />
-            <button type="submit">Update Status</button>
+          <form onSubmit={handleStatusChange} className="status-form">
+            <div className="form-group">
+              <label htmlFor="status" className="form-label">
+                New Status *
+              </label>
+              <select
+                id="status"
+                value={newStatus}
+                onChange={(e) => setNewStatus(e.target.value)}
+                required
+                className="form-input"
+              >
+                <option value="">Select Status</option>
+                <option value="open">Open</option>
+                <option value="in-progress">In Progress</option>
+                <option value="resolved">Resolved</option>
+                <option value="closed">Closed</option>
+                {user?.role === 'admin' && (
+                  <option value="rejected">Rejected</option>
+                )}
+              </select>
+            </div>
+            <div className="form-group">
+              <label htmlFor="reason" className="form-label">
+                Reason (optional)
+              </label>
+              <textarea
+                id="reason"
+                placeholder="Explain the reason for status change..."
+                value={statusReason}
+                onChange={(e) => setStatusReason(e.target.value)}
+                rows="3"
+                className="form-input"
+              />
+            </div>
           </form>
         </Modal>
       )}

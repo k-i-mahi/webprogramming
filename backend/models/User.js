@@ -46,18 +46,31 @@ const userSchema = new mongoose.Schema(
       default: '',
     },
     location: {
-      latitude: {
-        type: Number,
-        required: [true, 'Latitude is required'],
-        min: [-90, 'Latitude must be between -90 and 90'],
-        max: [90, 'Latitude must be between -90 and 90'],
+      // --- START FIX ---
+      // Updated to GeoJSON format for geospatial queries
+      type: {
+        type: String,
+        enum: ['Point'],
+        default: 'Point',
       },
-      longitude: {
-        type: Number,
-        required: [true, 'Longitude is required'],
-        min: [-180, 'Longitude must be between -180 and 180'],
-        max: [180, 'Longitude must be between -180 and 180'],
+      coordinates: {
+        type: [Number], // Stores as [longitude, latitude]
+        required: [true, 'Location coordinates are required'],
+        validate: {
+          validator: function (coords) {
+            return (
+              Array.isArray(coords) &&
+              coords.length === 2 &&
+              coords[0] >= -180 &&
+              coords[0] <= 180 && // Longitude
+              coords[1] >= -90 &&
+              coords[1] <= 90 // Latitude
+            );
+          },
+          message: 'Invalid coordinates. Must be [longitude, latitude].',
+        },
       },
+      // --- END FIX ---
     },
     avatar: {
       type: String,
@@ -89,7 +102,9 @@ userSchema.methods.comparePassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// Create regular indexes for location queries (not 2dsphere)
-userSchema.index({ 'location.latitude': 1, 'location.longitude': 1 });
+// --- START FIX ---
+// Create 2dsphere index for geospatial location queries
+userSchema.index({ location: '2dsphere' });
+// --- END FIX ---
 
 module.exports = mongoose.model('User', userSchema);

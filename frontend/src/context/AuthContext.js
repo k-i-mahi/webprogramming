@@ -55,6 +55,7 @@ export const AuthProvider = ({ children }) => {
         } catch (err) {
           console.error('Auth initialization error:', err);
           // Token invalid or expired - clear everything
+          // This logic is now correctly handled here instead of the interceptor
           localStorage.removeItem('token');
           localStorage.removeItem('user');
           setUser(null);
@@ -221,8 +222,11 @@ export const AuthProvider = ({ children }) => {
   // Get user statistics
   const getUserStats = async () => {
     try {
-      const response = await authService.getUserStats();
-      return response.data;
+      // --- START FIX ---
+      // authService.getUserStats() now returns the stats object directly
+      const stats = await authService.getUserStats();
+      return stats;
+      // --- END FIX ---
     } catch (err) {
       console.error('Get user stats error:', err);
       throw err;
